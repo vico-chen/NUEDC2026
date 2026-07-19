@@ -37,16 +37,18 @@
 #include <stdint.h>
 
 #define MOTOR_MAX_TARGET_RPM (1000U)
-#define MOTOR_COUNT (2U)
+#define MOTOR_COUNT (3U)
 
 static MotorControl gMotorA;
 static const MotorControl_Config gMotorAConfig = {
     .pwmInstance = PWM_MOTOR_AB_INST,
     .pwmChannel = DL_TIMER_CC_0_INDEX,
-    .directionPort = GPIO_MOTOR_A_PORT,
+    .directionIn1Port = GPIO_MOTOR_A_PORT,
+    .directionIn2Port = GPIO_MOTOR_A_PORT,
     .directionIn1Pin = GPIO_MOTOR_A_AIN_1_PIN,
     .directionIn2Pin = GPIO_MOTOR_A_AIN_2_PIN,
-    .encoderPort = GPIO_MOTOR_A_PORT,
+    .encoderPhaseAPort = GPIO_MOTOR_A_PORT,
+    .encoderPhaseBPort = GPIO_MOTOR_A_PORT,
     .encoderPhaseAPin = GPIO_MOTOR_A_EA_1_PIN,
     .encoderPhaseBPin = GPIO_MOTOR_A_EB_1_PIN,
     .pwmPeriodCounts = 100U,
@@ -68,12 +70,41 @@ static MotorControl gMotorB;
 static const MotorControl_Config gMotorBConfig = {
     .pwmInstance = PWM_MOTOR_AB_INST,
     .pwmChannel = DL_TIMER_CC_1_INDEX,
-    .directionPort = GPIO_MOTOR_B_PORT,
+    .directionIn1Port = GPIO_MOTOR_B_PORT,
+    .directionIn2Port = GPIO_MOTOR_B_PORT,
     .directionIn1Pin = GPIO_MOTOR_B_BIN_1_PIN,
     .directionIn2Pin = GPIO_MOTOR_B_BIN_2_PIN,
-    .encoderPort = GPIO_MOTOR_B_PORT,
+    .encoderPhaseAPort = GPIO_MOTOR_B_PORT,
+    .encoderPhaseBPort = GPIO_MOTOR_B_PORT,
     .encoderPhaseAPin = GPIO_MOTOR_B_EA_2_PIN,
     .encoderPhaseBPin = GPIO_MOTOR_B_EB_2_PIN,
+    .pwmPeriodCounts = 100U,
+    .encoderPpr = 13U,
+    .gearRatio = 20U,
+    .encoderDecodeMultiplier = 2U,
+    .sampleRateHz = 100U,
+    .reportSamples = 10U,
+    .maxTargetRpm = (int16_t) MOTOR_MAX_TARGET_RPM,
+    .zeroSpeedDeadbandCounts = 1,
+    .kp = 5.0f,
+    .ki = 1.0f,
+    .kd = 0.2f,
+    .outputMaxPercent = 99.0f,
+    .zeroSpeedBrakeMaxPercent = 40.0f,
+};
+
+static MotorControl gMotorC;
+static const MotorControl_Config gMotorCConfig = {
+    .pwmInstance = PWM_MOTOR_CD_INST,
+    .pwmChannel = DL_TIMER_CC_0_INDEX,
+    .directionIn1Port = GPIO_MOTOR_C_CIN_1_PORT,
+    .directionIn2Port = GPIO_MOTOR_C_CIN_2_PORT,
+    .directionIn1Pin = GPIO_MOTOR_C_CIN_1_PIN,
+    .directionIn2Pin = GPIO_MOTOR_C_CIN_2_PIN,
+    .encoderPhaseAPort = GPIO_MOTOR_C_EA_3_PORT,
+    .encoderPhaseBPort = GPIO_MOTOR_C_EB_3_PORT,
+    .encoderPhaseAPin = GPIO_MOTOR_C_EA_3_PIN,
+    .encoderPhaseBPin = GPIO_MOTOR_C_EB_3_PIN,
     .pwmPeriodCounts = 100U,
     .encoderPpr = 13U,
     .gearRatio = 20U,
@@ -188,18 +219,22 @@ int main(void)
     /*
      * TB6612 motor A: PA12/PB6/PB7, encoder PB0/PB16.
      * TB6612 motor B: PA13/PB8/PB15, encoder PB17/PB12.
+     * TB6612 motor C: PA8/PA26/PB24, encoder PB9/PA27.
      *
-     * UART "<motorA_rpm> <motorB_rpm>" + CR/LF sets both target RPM.
+     * UART "<A_rpm> <B_rpm> <C_rpm>" + CR/LF sets all target RPM.
      * Target 0 actively brakes to the deadband, then short-brakes.
      * Positive runs forward and negative reverses.
      */
     MotorControl_init(&gMotorA, &gMotorAConfig);
     MotorControl_init(&gMotorB, &gMotorBConfig);
+    MotorControl_init(&gMotorC, &gMotorCConfig);
 
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);
     NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
     NVIC_EnableIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
+    NVIC_ClearPendingIRQ(GPIO_MOTOR_C_INT_IRQN);
+    NVIC_EnableIRQ(GPIO_MOTOR_C_INT_IRQN);
     NVIC_ClearPendingIRQ(TIMER_PID_INST_INT_IRQN);
     NVIC_EnableIRQ(TIMER_PID_INST_INT_IRQN);
 
@@ -208,8 +243,10 @@ int main(void)
     while (1) {
         static MotorControl_Status motorAStatus;
         static MotorControl_Status motorBStatus;
+        static MotorControl_Status motorCStatus;
         static bool motorAStatusReady;
         static bool motorBStatusReady;
+        static bool motorCStatusReady;
 
         if (MotorControl_takeStatus(&gMotorA, &motorAStatus)) {
             motorAStatusReady = true;
@@ -217,13 +254,19 @@ int main(void)
         if (MotorControl_takeStatus(&gMotorB, &motorBStatus)) {
             motorBStatusReady = true;
         }
-        if (motorAStatusReady && motorBStatusReady) {
+        if (MotorControl_takeStatus(&gMotorC, &motorCStatus)) {
+            motorCStatusReady = true;
+        }
+        if (motorAStatusReady && motorBStatusReady && motorCStatusReady) {
             UART_reportMotorStatus('A', &motorAStatus);
             UART_sendString(",");
             UART_reportMotorStatus('B', &motorBStatus);
+            UART_sendString(",");
+            UART_reportMotorStatus('C', &motorCStatus);
             UART_sendString("\r\n");
             motorAStatusReady = false;
             motorBStatusReady = false;
+            motorCStatusReady = false;
         }
         __WFI();
     }
@@ -231,17 +274,24 @@ int main(void)
 
 void GROUP1_IRQHandler(void)
 {
-    uint32_t interruptStatus = DL_GPIO_getEnabledInterruptStatus(
+    uint32_t gpioBInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
         GPIOB, GPIO_MOTOR_A_EB_1_PIN | GPIO_MOTOR_B_EB_2_PIN);
+    uint32_t gpioAInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
+        GPIO_MOTOR_C_EB_3_PORT, GPIO_MOTOR_C_EB_3_PIN);
 
-    if ((interruptStatus & GPIO_MOTOR_A_EB_1_PIN) != 0U) {
+    if ((gpioBInterruptStatus & GPIO_MOTOR_A_EB_1_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorA);
     }
-    if ((interruptStatus & GPIO_MOTOR_B_EB_2_PIN) != 0U) {
+    if ((gpioBInterruptStatus & GPIO_MOTOR_B_EB_2_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorB);
     }
+    if ((gpioAInterruptStatus & GPIO_MOTOR_C_EB_3_PIN) != 0U) {
+        MotorControl_handleEncoderEdge(&gMotorC);
+    }
 
-    DL_GPIO_clearInterruptStatus(GPIOB, interruptStatus);
+    DL_GPIO_clearInterruptStatus(GPIOB, gpioBInterruptStatus);
+    DL_GPIO_clearInterruptStatus(
+        GPIO_MOTOR_C_EB_3_PORT, gpioAInterruptStatus);
 }
 
 void TIMER_PID_INST_IRQHandler(void)
@@ -250,6 +300,7 @@ void TIMER_PID_INST_IRQHandler(void)
         case DL_TIMER_IIDX_ZERO:
             MotorControl_update(&gMotorA);
             MotorControl_update(&gMotorB);
+            MotorControl_update(&gMotorC);
             break;
         default:
             break;
@@ -301,6 +352,7 @@ void UART_0_INST_IRQHandler(void)
                 if (!gRxInvalid && (gRxMotorIndex == MOTOR_COUNT)) {
                     MotorControl_setTargetRpm(&gMotorA, gRxTargets[0]);
                     MotorControl_setTargetRpm(&gMotorB, gRxTargets[1]);
+                    MotorControl_setTargetRpm(&gMotorC, gRxTargets[2]);
                 }
                 UART_resetCommand();
             } else {

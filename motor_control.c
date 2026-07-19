@@ -29,21 +29,22 @@ static void MotorControl_applyOutput(
     }
 
     if (pwmPercent == 0) {
-        DL_GPIO_clearPins(motor->config.directionPort,
-            motor->config.directionIn1Pin |
-                motor->config.directionIn2Pin);
+        DL_GPIO_clearPins(motor->config.directionIn1Port,
+            motor->config.directionIn1Pin);
+        DL_GPIO_clearPins(motor->config.directionIn2Port,
+            motor->config.directionIn2Pin);
         compareValue = loadValue;
     } else {
         if (pwmPercent > 0) {
-            DL_GPIO_setPins(motor->config.directionPort,
+            DL_GPIO_setPins(motor->config.directionIn1Port,
                 motor->config.directionIn1Pin);
-            DL_GPIO_clearPins(motor->config.directionPort,
+            DL_GPIO_clearPins(motor->config.directionIn2Port,
                 motor->config.directionIn2Pin);
             pwmMagnitude = (uint16_t) pwmPercent;
         } else {
-            DL_GPIO_clearPins(motor->config.directionPort,
+            DL_GPIO_clearPins(motor->config.directionIn1Port,
                 motor->config.directionIn1Pin);
-            DL_GPIO_setPins(motor->config.directionPort,
+            DL_GPIO_setPins(motor->config.directionIn2Port,
                 motor->config.directionIn2Pin);
             pwmMagnitude = (uint16_t) (-pwmPercent);
         }
@@ -176,9 +177,9 @@ void MotorControl_setTargetRpm(MotorControl *motor, int16_t targetRpm)
 
 void MotorControl_handleEncoderEdge(MotorControl *motor)
 {
-    bool phaseB = (DL_GPIO_readPins(motor->config.encoderPort,
+    bool phaseB = (DL_GPIO_readPins(motor->config.encoderPhaseBPort,
                        motor->config.encoderPhaseBPin) != 0U);
-    bool phaseA = (DL_GPIO_readPins(motor->config.encoderPort,
+    bool phaseA = (DL_GPIO_readPins(motor->config.encoderPhaseAPort,
                        motor->config.encoderPhaseAPin) != 0U);
 
     if (phaseB) {

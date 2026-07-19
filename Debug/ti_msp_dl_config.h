@@ -211,6 +211,26 @@ extern "C" {
 #define GPIO_MOTOR_B_EB_2_IIDX                              (DL_GPIO_IIDX_DIO12)
 #define GPIO_MOTOR_B_EB_2_PIN                                   (DL_GPIO_PIN_12)
 #define GPIO_MOTOR_B_EB_2_IOMUX                                  (IOMUX_PINCM29)
+/* Defines for CIN_1: GPIOA.26 with pinCMx 59 on package pin 30 */
+#define GPIO_MOTOR_C_CIN_1_PORT                                          (GPIOA)
+#define GPIO_MOTOR_C_CIN_1_PIN                                  (DL_GPIO_PIN_26)
+#define GPIO_MOTOR_C_CIN_1_IOMUX                                 (IOMUX_PINCM59)
+/* Defines for CIN_2: GPIOB.24 with pinCMx 52 on package pin 23 */
+#define GPIO_MOTOR_C_CIN_2_PORT                                          (GPIOB)
+#define GPIO_MOTOR_C_CIN_2_PIN                                  (DL_GPIO_PIN_24)
+#define GPIO_MOTOR_C_CIN_2_IOMUX                                 (IOMUX_PINCM52)
+/* Defines for EA_3: GPIOB.9 with pinCMx 26 on package pin 61 */
+#define GPIO_MOTOR_C_EA_3_PORT                                           (GPIOB)
+#define GPIO_MOTOR_C_EA_3_PIN                                    (DL_GPIO_PIN_9)
+#define GPIO_MOTOR_C_EA_3_IOMUX                                  (IOMUX_PINCM26)
+/* Defines for EB_3: GPIOA.27 with pinCMx 60 on package pin 31 */
+#define GPIO_MOTOR_C_EB_3_PORT                                           (GPIOA)
+// pins affected by this interrupt request:["EB_3"]
+#define GPIO_MOTOR_C_INT_IRQN                                   (GPIOA_INT_IRQn)
+#define GPIO_MOTOR_C_INT_IIDX                   (DL_INTERRUPT_GROUP1_IIDX_GPIOA)
+#define GPIO_MOTOR_C_EB_3_IIDX                              (DL_GPIO_IIDX_DIO27)
+#define GPIO_MOTOR_C_EB_3_PIN                                   (DL_GPIO_PIN_27)
+#define GPIO_MOTOR_C_EB_3_IOMUX                                  (IOMUX_PINCM60)
 
 
 /* clang-format on */

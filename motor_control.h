@@ -8,10 +8,12 @@
 typedef struct {
     GPTIMER_Regs *pwmInstance;
     DL_TIMER_CC_INDEX pwmChannel;
-    GPIO_Regs *directionPort;
+    GPIO_Regs *directionIn1Port;
+    GPIO_Regs *directionIn2Port;
     uint32_t directionIn1Pin;
     uint32_t directionIn2Pin;
-    GPIO_Regs *encoderPort;
+    GPIO_Regs *encoderPhaseAPort;
+    GPIO_Regs *encoderPhaseBPort;
     uint32_t encoderPhaseAPin;
     uint32_t encoderPhaseBPin;
     uint16_t pwmPeriodCounts;
