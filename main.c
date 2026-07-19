@@ -39,6 +39,7 @@
 #define MOTOR_MAX_TARGET_RPM (1000U)
 #define UART_COMMAND_BUFFER_SIZE (32U)
 #define CAR_DEFAULT_SPEED_RPM (200)
+#define CAR_DEFAULT_TURN_INNER_PERCENT (50U)
 #define ENABLE_MOTOR_STATUS_UART (0)
 
 /*
@@ -165,6 +166,7 @@ static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
 static int16_t gCarSpeedRpm = CAR_DEFAULT_SPEED_RPM;
+static uint8_t gCarTurnInnerPercent = CAR_DEFAULT_TURN_INNER_PERCENT;
 
 #if ENABLE_MOTOR_STATUS_UART
 static void UART_sendString(const char *text)
@@ -243,54 +245,90 @@ static void Car_setWheelRpm(int16_t leftRearRpm, int16_t leftFrontRpm,
         &gMotorD, (int16_t) (leftRearRpm * MOTOR_D_FORWARD_SIGN));
 }
 
-static bool Car_parseCommandSpeed(
-    uint8_t startIndex, int16_t *speedRpm, bool *speedSpecified)
+static bool Car_parseUnsignedValue(
+    uint8_t *index, uint16_t maximum, uint16_t *value)
+{
+    uint16_t parsedValue = 0U;
+    bool hasDigit = false;
+
+    while ((gUartCommand[*index] >= '0') &&
+           (gUartCommand[*index] <= '9')) {
+        uint16_t digit =
+            (uint16_t) (gUartCommand[*index] - '0');
+
+        if (parsedValue > (uint16_t) ((maximum - digit) / 10U)) {
+            return false;
+        }
+        parsedValue = (uint16_t) ((parsedValue * 10U) + digit);
+        hasDigit = true;
+        (*index)++;
+    }
+
+    if (!hasDigit) {
+        return false;
+    }
+    *value = parsedValue;
+    return true;
+}
+
+static bool Car_parseCommandParameters(uint8_t startIndex,
+    int16_t *speedRpm, bool *speedSpecified,
+    uint8_t *turnInnerPercent, bool *turnSpecified)
 {
     uint8_t index = startIndex;
-    uint16_t value = 0U;
-    bool hasDigit = false;
+    uint16_t value;
+
+    *speedRpm = gCarSpeedRpm;
+    *turnInnerPercent = gCarTurnInnerPercent;
+    *speedSpecified = false;
+    *turnSpecified = false;
 
     while ((gUartCommand[index] == ' ') ||
            (gUartCommand[index] == '\t')) {
         index++;
     }
-
     if (gUartCommand[index] == '\0') {
-        *speedRpm = gCarSpeedRpm;
-        *speedSpecified = false;
         return true;
     }
 
-    while ((gUartCommand[index] >= '0') &&
-           (gUartCommand[index] <= '9')) {
-        value = (uint16_t) ((value * 10U) +
-            (uint16_t) (gUartCommand[index] - '0'));
-        hasDigit = true;
-        index++;
-        if (value > MOTOR_MAX_TARGET_RPM) {
-            return false;
-        }
+    if (!Car_parseUnsignedValue(
+            &index, MOTOR_MAX_TARGET_RPM, &value)) {
+        return false;
     }
+    *speedRpm = (int16_t) value;
+    *speedSpecified = true;
 
     while ((gUartCommand[index] == ' ') ||
            (gUartCommand[index] == '\t')) {
         index++;
     }
-    if (!hasDigit || (gUartCommand[index] != '\0')) {
-        return false;
+    if (gUartCommand[index] == '\0') {
+        return true;
     }
 
-    *speedRpm = (int16_t) value;
-    *speedSpecified = true;
-    return true;
+    if (!Car_parseUnsignedValue(&index, 100U, &value)) {
+        return false;
+    }
+    *turnInnerPercent = (uint8_t) value;
+    *turnSpecified = true;
+
+    while ((gUartCommand[index] == ' ') ||
+           (gUartCommand[index] == '\t')) {
+        index++;
+    }
+    return (gUartCommand[index] == '\0');
 }
 
 static void Car_processUartCommand(void)
 {
     uint8_t index = 0U;
     char command;
+    char turnCommand = '\0';
     int16_t speedRpm;
+    int16_t innerWheelRpm;
+    uint8_t turnInnerPercent;
     bool speedSpecified;
+    bool turnSpecified;
 
     while ((gUartCommand[index] == ' ') ||
            (gUartCommand[index] == '\t')) {
@@ -302,6 +340,18 @@ static void Car_processUartCommand(void)
     }
     index++;
 
+    if ((command == 'F') || (command == 'B')) {
+        turnCommand = gUartCommand[index];
+        if ((turnCommand >= 'a') && (turnCommand <= 'z')) {
+            turnCommand = (char) (turnCommand - ('a' - 'A'));
+        }
+        if ((turnCommand == 'L') || (turnCommand == 'R')) {
+            index++;
+        } else {
+            turnCommand = '\0';
+        }
+    }
+
     if (command == 'X') {
         Car_setWheelRpm(0, 0, 0, 0);
         return;
@@ -310,19 +360,46 @@ static void Car_processUartCommand(void)
         (command != 'L') && (command != 'R')) {
         return;
     }
-    if (!Car_parseCommandSpeed(index, &speedRpm, &speedSpecified)) {
+    if (!Car_parseCommandParameters(index, &speedRpm, &speedSpecified,
+            &turnInnerPercent, &turnSpecified)) {
+        return;
+    }
+    if (turnSpecified && (turnCommand == '\0')) {
         return;
     }
     if (speedSpecified) {
         gCarSpeedRpm = speedRpm;
     }
+    if (turnSpecified) {
+        gCarTurnInnerPercent = turnInnerPercent;
+    }
+    innerWheelRpm = (int16_t) (((int32_t) speedRpm *
+        turnInnerPercent) / 100);
 
     switch (command) {
         case 'F':
-            Car_setWheelRpm(speedRpm, speedRpm, speedRpm, speedRpm);
+            if (turnCommand == 'L') {
+                Car_setWheelRpm(
+                    innerWheelRpm, innerWheelRpm, speedRpm, speedRpm);
+            } else if (turnCommand == 'R') {
+                Car_setWheelRpm(
+                    speedRpm, speedRpm, innerWheelRpm, innerWheelRpm);
+            } else {
+                Car_setWheelRpm(
+                    speedRpm, speedRpm, speedRpm, speedRpm);
+            }
             break;
         case 'B':
-            Car_setWheelRpm(-speedRpm, -speedRpm, -speedRpm, -speedRpm);
+            if (turnCommand == 'L') {
+                Car_setWheelRpm(-innerWheelRpm, -innerWheelRpm,
+                    -speedRpm, -speedRpm);
+            } else if (turnCommand == 'R') {
+                Car_setWheelRpm(-speedRpm, -speedRpm,
+                    -innerWheelRpm, -innerWheelRpm);
+            } else {
+                Car_setWheelRpm(
+                    -speedRpm, -speedRpm, -speedRpm, -speedRpm);
+            }
             break;
         case 'L':
             Car_setWheelRpm(-speedRpm, -speedRpm, speedRpm, speedRpm);
@@ -341,7 +418,8 @@ int main(void)
 
     /*
      * Wheel map: A right-rear, B right-front, C left-front, D left-rear.
-     * UART remote control: F/B/L/R [rpm], X stops the car.
+     * Arc command: FL/FR/BL/BR [rpm] [inner wheel percent].
+     * Straight/pivot command: F/B/L/R [rpm], X stops.
      * Target 0 actively brakes to the deadband, then short-brakes.
      */
     MotorControl_init(&gMotorA, &gMotorAConfig);
