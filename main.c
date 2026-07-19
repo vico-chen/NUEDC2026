@@ -37,7 +37,17 @@
 #include <stdint.h>
 
 #define MOTOR_MAX_TARGET_RPM (1000U)
-#define MOTOR_COUNT (4U)
+#define UART_COMMAND_BUFFER_SIZE (32U)
+#define CAR_DEFAULT_SPEED_RPM (200)
+
+/*
+ * Motors on the right side are mirrored on a typical four-wheel chassis.
+ * Change an individual sign if that wheel rotates opposite to the command.
+ */
+#define MOTOR_A_FORWARD_SIGN (1)
+#define MOTOR_B_FORWARD_SIGN (1)
+#define MOTOR_C_FORWARD_SIGN (-1)
+#define MOTOR_D_FORWARD_SIGN (-1)
 
 static MotorControl gMotorA;
 static const MotorControl_Config gMotorAConfig = {
@@ -147,12 +157,10 @@ static const MotorControl_Config gMotorDConfig = {
     .zeroSpeedBrakeMaxPercent = 40.0f,
 };
 
-static volatile int16_t gRxTargets[MOTOR_COUNT];
-static volatile uint16_t gRxValue;
-static volatile uint8_t gRxDigitCount;
-static volatile uint8_t gRxMotorIndex;
-static volatile bool gRxInvalid;
-static volatile bool gRxNegative;
+static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
+static volatile uint8_t gUartCommandLength;
+static volatile bool gUartCommandReady;
+static int16_t gCarSpeedRpm = CAR_DEFAULT_SPEED_RPM;
 
 static void UART_sendString(const char *text)
 {
@@ -215,28 +223,109 @@ static void UART_reportMotorStatus(
     UART_sendString("]");
 }
 
-static void UART_finishTargetValue(void)
+static void Car_setWheelRpm(int16_t leftRearRpm, int16_t leftFrontRpm,
+    int16_t rightFrontRpm, int16_t rightRearRpm)
 {
-    if ((gRxDigitCount == 0U) || (gRxMotorIndex >= MOTOR_COUNT)) {
-        gRxInvalid = true;
-        return;
-    }
-
-    gRxTargets[gRxMotorIndex] = gRxNegative ?
-        -(int16_t) gRxValue : (int16_t) gRxValue;
-    gRxMotorIndex++;
-    gRxValue = 0U;
-    gRxDigitCount = 0U;
-    gRxNegative = false;
+    MotorControl_setTargetRpm(
+        &gMotorA, (int16_t) (leftRearRpm * MOTOR_A_FORWARD_SIGN));
+    MotorControl_setTargetRpm(
+        &gMotorB, (int16_t) (leftFrontRpm * MOTOR_B_FORWARD_SIGN));
+    MotorControl_setTargetRpm(
+        &gMotorC, (int16_t) (rightFrontRpm * MOTOR_C_FORWARD_SIGN));
+    MotorControl_setTargetRpm(
+        &gMotorD, (int16_t) (rightRearRpm * MOTOR_D_FORWARD_SIGN));
 }
 
-static void UART_resetCommand(void)
+static bool Car_parseCommandSpeed(
+    uint8_t startIndex, int16_t *speedRpm, bool *speedSpecified)
 {
-    gRxValue = 0U;
-    gRxDigitCount = 0U;
-    gRxMotorIndex = 0U;
-    gRxInvalid = false;
-    gRxNegative = false;
+    uint8_t index = startIndex;
+    uint16_t value = 0U;
+    bool hasDigit = false;
+
+    while ((gUartCommand[index] == ' ') ||
+           (gUartCommand[index] == '\t')) {
+        index++;
+    }
+
+    if (gUartCommand[index] == '\0') {
+        *speedRpm = gCarSpeedRpm;
+        *speedSpecified = false;
+        return true;
+    }
+
+    while ((gUartCommand[index] >= '0') &&
+           (gUartCommand[index] <= '9')) {
+        value = (uint16_t) ((value * 10U) +
+            (uint16_t) (gUartCommand[index] - '0'));
+        hasDigit = true;
+        index++;
+        if (value > MOTOR_MAX_TARGET_RPM) {
+            return false;
+        }
+    }
+
+    while ((gUartCommand[index] == ' ') ||
+           (gUartCommand[index] == '\t')) {
+        index++;
+    }
+    if (!hasDigit || (gUartCommand[index] != '\0')) {
+        return false;
+    }
+
+    *speedRpm = (int16_t) value;
+    *speedSpecified = true;
+    return true;
+}
+
+static void Car_processUartCommand(void)
+{
+    uint8_t index = 0U;
+    char command;
+    int16_t speedRpm;
+    bool speedSpecified;
+
+    while ((gUartCommand[index] == ' ') ||
+           (gUartCommand[index] == '\t')) {
+        index++;
+    }
+    command = gUartCommand[index];
+    if ((command >= 'a') && (command <= 'z')) {
+        command = (char) (command - ('a' - 'A'));
+    }
+    index++;
+
+    if (command == 'X') {
+        Car_setWheelRpm(0, 0, 0, 0);
+        return;
+    }
+    if ((command != 'W') && (command != 'S') &&
+        (command != 'A') && (command != 'D')) {
+        return;
+    }
+    if (!Car_parseCommandSpeed(index, &speedRpm, &speedSpecified)) {
+        return;
+    }
+    if (speedSpecified) {
+        gCarSpeedRpm = speedRpm;
+    }
+
+    switch (command) {
+        case 'W':
+            Car_setWheelRpm(speedRpm, speedRpm, speedRpm, speedRpm);
+            break;
+        case 'S':
+            Car_setWheelRpm(-speedRpm, -speedRpm, -speedRpm, -speedRpm);
+            break;
+        case 'A':
+            Car_setWheelRpm(-speedRpm, -speedRpm, speedRpm, speedRpm);
+            break;
+        case 'D':
+            Car_setWheelRpm(speedRpm, speedRpm, -speedRpm, -speedRpm);
+            break;
+        default:
+            break;
+    }
 }
 
 int main(void)
@@ -249,9 +338,8 @@ int main(void)
      * TB6612 motor C: PA8/PA26/PB24, encoder PB9/PA27.
      * TB6612 motor D: PA22/PB18/PA18, encoder PA24/PA17.
      *
-     * UART "<A_rpm> <B_rpm> <C_rpm> <D_rpm>" + CR/LF sets all RPM.
+     * UART remote control: W/S/A/D [rpm], X stops the car.
      * Target 0 actively brakes to the deadband, then short-brakes.
-     * Positive runs forward and negative reverses.
      */
     MotorControl_init(&gMotorA, &gMotorAConfig);
     MotorControl_init(&gMotorB, &gMotorBConfig);
@@ -278,6 +366,11 @@ int main(void)
         static bool motorBStatusReady;
         static bool motorCStatusReady;
         static bool motorDStatusReady;
+
+        if (gUartCommandReady) {
+            Car_processUartCommand();
+            gUartCommandReady = false;
+        }
 
         if (MotorControl_takeStatus(&gMotorA, &motorAStatus)) {
             motorAStatusReady = true;
@@ -356,49 +449,21 @@ void UART_0_INST_IRQHandler(void)
         case DL_UART_MAIN_IIDX_RX:
             rxData = DL_UART_Main_receiveData(UART_0_INST);
 
-            if (gRxInvalid &&
-                (rxData != (uint8_t) '\r') &&
-                (rxData != (uint8_t) '\n')) {
-                break;
-            } else if ((rxData == (uint8_t) '-') &&
-                       (gRxDigitCount == 0U) && !gRxNegative) {
-                gRxNegative = true;
-            } else if ((rxData >= (uint8_t) '0') &&
-                       (rxData <= (uint8_t) '9')) {
-                uint16_t newValue =
-                    (gRxValue * 10U) + (uint16_t) (rxData - (uint8_t) '0');
-
-                gRxDigitCount++;
-                if ((gRxDigitCount > 4U) ||
-                    (newValue > MOTOR_MAX_TARGET_RPM)) {
-                    gRxInvalid = true;
+            if (!gUartCommandReady) {
+                if ((rxData == (uint8_t) '\r') ||
+                    (rxData == (uint8_t) '\n')) {
+                    if (gUartCommandLength > 0U) {
+                        gUartCommand[gUartCommandLength] = '\0';
+                        gUartCommandReady = true;
+                        gUartCommandLength = 0U;
+                    }
+                } else if (gUartCommandLength <
+                           (UART_COMMAND_BUFFER_SIZE - 1U)) {
+                    gUartCommand[gUartCommandLength] = (char) rxData;
+                    gUartCommandLength++;
                 } else {
-                    gRxValue = newValue;
+                    gUartCommandLength = 0U;
                 }
-            } else if ((rxData == (uint8_t) ' ') ||
-                       (rxData == (uint8_t) '\t')) {
-                if (gRxDigitCount > 0U) {
-                    UART_finishTargetValue();
-                } else if (gRxNegative) {
-                    gRxInvalid = true;
-                }
-            } else if ((rxData == (uint8_t) '\r') ||
-                       (rxData == (uint8_t) '\n')) {
-                if (!gRxInvalid && (gRxDigitCount > 0U)) {
-                    UART_finishTargetValue();
-                } else if (gRxNegative) {
-                    gRxInvalid = true;
-                }
-
-                if (!gRxInvalid && (gRxMotorIndex == MOTOR_COUNT)) {
-                    MotorControl_setTargetRpm(&gMotorA, gRxTargets[0]);
-                    MotorControl_setTargetRpm(&gMotorB, gRxTargets[1]);
-                    MotorControl_setTargetRpm(&gMotorC, gRxTargets[2]);
-                    MotorControl_setTargetRpm(&gMotorD, gRxTargets[3]);
-                }
-                UART_resetCommand();
-            } else {
-                gRxInvalid = true;
             }
             break;
         default:
