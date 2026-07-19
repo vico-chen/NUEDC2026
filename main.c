@@ -32,6 +32,7 @@
 
 #include "ti_msp_dl_config.h"
 #include "motor_control.h"
+#include "car_control.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -162,11 +163,24 @@ static const MotorControl_Config gMotorDConfig = {
     .zeroSpeedBrakeMaxPercent = 40.0f,
 };
 
+static CarControl gCar;
+static const CarControl_Config gCarConfig = {
+    .rightRearMotor = &gMotorA,
+    .rightFrontMotor = &gMotorB,
+    .leftFrontMotor = &gMotorC,
+    .leftRearMotor = &gMotorD,
+    .rightRearForwardSign = MOTOR_A_FORWARD_SIGN,
+    .rightFrontForwardSign = MOTOR_B_FORWARD_SIGN,
+    .leftFrontForwardSign = MOTOR_C_FORWARD_SIGN,
+    .leftRearForwardSign = MOTOR_D_FORWARD_SIGN,
+    .maximumSpeedRpm = (int16_t) MOTOR_MAX_TARGET_RPM,
+    .defaultSpeedRpm = CAR_DEFAULT_SPEED_RPM,
+    .defaultTurnInnerPercent = CAR_DEFAULT_TURN_INNER_PERCENT,
+};
+
 static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
-static int16_t gCarSpeedRpm = CAR_DEFAULT_SPEED_RPM;
-static uint8_t gCarTurnInnerPercent = CAR_DEFAULT_TURN_INNER_PERCENT;
 
 #if ENABLE_MOTOR_STATUS_UART
 static void UART_sendString(const char *text)
@@ -231,20 +245,6 @@ static void UART_reportMotorStatus(
 }
 #endif
 
-static void Car_setWheelRpm(int16_t leftRearRpm, int16_t leftFrontRpm,
-    int16_t rightFrontRpm, int16_t rightRearRpm)
-{
-    /* A=right-rear, B=right-front, C=left-front, D=left-rear */
-    MotorControl_setTargetRpm(
-        &gMotorA, (int16_t) (rightRearRpm * MOTOR_A_FORWARD_SIGN));
-    MotorControl_setTargetRpm(
-        &gMotorB, (int16_t) (rightFrontRpm * MOTOR_B_FORWARD_SIGN));
-    MotorControl_setTargetRpm(
-        &gMotorC, (int16_t) (leftFrontRpm * MOTOR_C_FORWARD_SIGN));
-    MotorControl_setTargetRpm(
-        &gMotorD, (int16_t) (leftRearRpm * MOTOR_D_FORWARD_SIGN));
-}
-
 static bool Car_parseUnsignedValue(
     uint8_t *index, uint16_t maximum, uint16_t *value)
 {
@@ -278,8 +278,8 @@ static bool Car_parseCommandParameters(uint8_t startIndex,
     uint8_t index = startIndex;
     uint16_t value;
 
-    *speedRpm = gCarSpeedRpm;
-    *turnInnerPercent = gCarTurnInnerPercent;
+    *speedRpm = CarControl_getSpeedRpm(&gCar);
+    *turnInnerPercent = CarControl_getTurnInnerPercent(&gCar);
     *speedSpecified = false;
     *turnSpecified = false;
 
@@ -324,8 +324,8 @@ static void Car_processUartCommand(void)
     uint8_t index = 0U;
     char command;
     char turnCommand = '\0';
+    CarControl_Motion motion;
     int16_t speedRpm;
-    int16_t innerWheelRpm;
     uint8_t turnInnerPercent;
     bool speedSpecified;
     bool turnSpecified;
@@ -353,7 +353,7 @@ static void Car_processUartCommand(void)
     }
 
     if (command == 'X') {
-        Car_setWheelRpm(0, 0, 0, 0);
+        CarControl_stop(&gCar);
         return;
     }
     if ((command != 'F') && (command != 'B') &&
@@ -367,49 +367,37 @@ static void Car_processUartCommand(void)
     if (turnSpecified && (turnCommand == '\0')) {
         return;
     }
-    if (speedSpecified) {
-        gCarSpeedRpm = speedRpm;
-    }
-    if (turnSpecified) {
-        gCarTurnInnerPercent = turnInnerPercent;
-    }
-    innerWheelRpm = (int16_t) (((int32_t) speedRpm *
-        turnInnerPercent) / 100);
 
     switch (command) {
         case 'F':
             if (turnCommand == 'L') {
-                Car_setWheelRpm(
-                    innerWheelRpm, innerWheelRpm, speedRpm, speedRpm);
+                motion = CAR_CONTROL_FORWARD_LEFT;
             } else if (turnCommand == 'R') {
-                Car_setWheelRpm(
-                    speedRpm, speedRpm, innerWheelRpm, innerWheelRpm);
+                motion = CAR_CONTROL_FORWARD_RIGHT;
             } else {
-                Car_setWheelRpm(
-                    speedRpm, speedRpm, speedRpm, speedRpm);
+                motion = CAR_CONTROL_FORWARD;
             }
             break;
         case 'B':
             if (turnCommand == 'L') {
-                Car_setWheelRpm(-innerWheelRpm, -innerWheelRpm,
-                    -speedRpm, -speedRpm);
+                motion = CAR_CONTROL_BACKWARD_LEFT;
             } else if (turnCommand == 'R') {
-                Car_setWheelRpm(-speedRpm, -speedRpm,
-                    -innerWheelRpm, -innerWheelRpm);
+                motion = CAR_CONTROL_BACKWARD_RIGHT;
             } else {
-                Car_setWheelRpm(
-                    -speedRpm, -speedRpm, -speedRpm, -speedRpm);
+                motion = CAR_CONTROL_BACKWARD;
             }
             break;
         case 'L':
-            Car_setWheelRpm(-speedRpm, -speedRpm, speedRpm, speedRpm);
+            motion = CAR_CONTROL_PIVOT_LEFT;
             break;
         case 'R':
-            Car_setWheelRpm(speedRpm, speedRpm, -speedRpm, -speedRpm);
+            motion = CAR_CONTROL_PIVOT_RIGHT;
             break;
         default:
-            break;
+            return;
     }
+
+    CarControl_setMotion(&gCar, motion, speedRpm, turnInnerPercent);
 }
 
 int main(void)
@@ -426,6 +414,7 @@ int main(void)
     MotorControl_init(&gMotorB, &gMotorBConfig);
     MotorControl_init(&gMotorC, &gMotorCConfig);
     MotorControl_init(&gMotorD, &gMotorDConfig);
+    CarControl_init(&gCar, &gCarConfig);
 
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);

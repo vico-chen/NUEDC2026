@@ -10,6 +10,7 @@ GEN_OPTS__FLAG := @"./device.opt"
 GEN_CMDS__FLAG := -Wl,-l"./device_linker.cmd" 
 
 ORDERED_OBJS += \
+"./car_control.o" \
 "./main.o" \
 "./ti_msp_dl_config.o" \
 "./startup_mspm0g350x_ticlang.o" \
@@ -137,8 +138,8 @@ main.out: $(OBJS) $(GEN_CMDS)
 # Other Targets
 clean:
 	-$(RM) $(GEN_MISC_FILES__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "main.o" "ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "motor_control.o" 
-	-$(RM) "main.d" "ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "motor_control.d" 
+	-$(RM) "car_control.o" "main.o" "ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "motor_control.o" 
+	-$(RM) "car_control.d" "main.d" "ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "motor_control.d" 
 	-@echo ' '
 
 .PHONY: all clean dependents

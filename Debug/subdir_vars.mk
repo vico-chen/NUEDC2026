@@ -9,6 +9,7 @@ SYSCFG_SRCS += \
 ../main.syscfg 
 
 C_SRCS += \
+../car_control.c \
 ../main.c \
 ./ti_msp_dl_config.c \
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c \
@@ -23,6 +24,7 @@ GEN_FILES += \
 ./ti_msp_dl_config.c 
 
 C_DEPS += \
+./car_control.d \
 ./main.d \
 ./ti_msp_dl_config.d \
 ./startup_mspm0g350x_ticlang.d \
@@ -32,6 +34,7 @@ GEN_OPTS += \
 ./device.opt 
 
 OBJS += \
+./car_control.o \
 ./main.o \
 ./ti_msp_dl_config.o \
 ./startup_mspm0g350x_ticlang.o \
@@ -43,6 +46,7 @@ GEN_MISC_FILES += \
 ./Event.dot 
 
 OBJS__QUOTED += \
+"car_control.o" \
 "main.o" \
 "ti_msp_dl_config.o" \
 "startup_mspm0g350x_ticlang.o" \
@@ -54,6 +58,7 @@ GEN_MISC_FILES__QUOTED += \
 "Event.dot" 
 
 C_DEPS__QUOTED += \
+"car_control.d" \
 "main.d" \
 "ti_msp_dl_config.d" \
 "startup_mspm0g350x_ticlang.d" \
@@ -65,6 +70,7 @@ GEN_FILES__QUOTED += \
 "ti_msp_dl_config.c" 
 
 C_SRCS__QUOTED += \
+"../car_control.c" \
 "../main.c" \
 "./ti_msp_dl_config.c" \
 "C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" \

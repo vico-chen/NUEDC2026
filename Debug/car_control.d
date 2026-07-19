@@ -1,7 +1,8 @@
 # FIXED
 
-main.o: ../main.c \
- ti_msp_dl_config.h \
+car_control.o: ../car_control.c ../car_control.h ../motor_control.h \
+ C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h \
+ C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_adc12.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/mspm0g350x.h \
@@ -32,8 +33,6 @@ main.o: ../main.c \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/hw_debugss.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/hw_sysctl.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/sysctl/hw_sysctl_mspm0g1x0x_g3x0x.h \
- C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h \
- C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_adc12.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_common.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_factoryregion.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_core.h \
@@ -83,9 +82,11 @@ main.o: ../main.c \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_vref.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
- C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h \
- ../motor_control.h ../car_control.h
-ti_msp_dl_config.h:
+ C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h
+../car_control.h:
+../motor_control.h:
+C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h:
+C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_adc12.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/mspm0g350x.h:
@@ -116,8 +117,6 @@ C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/hw_cpuss.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/hw_debugss.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/hw_sysctl.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/sysctl/hw_sysctl_mspm0g1x0x_g3x0x.h:
-C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h:
-C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_adc12.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_common.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_factoryregion.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_core.h:
@@ -168,5 +167,3 @@ C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_vref.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h:
-../motor_control.h:
-../car_control.h:
