@@ -39,15 +39,19 @@
 #define MOTOR_MAX_TARGET_RPM (1000U)
 #define UART_COMMAND_BUFFER_SIZE (32U)
 #define CAR_DEFAULT_SPEED_RPM (200)
+#define ENABLE_MOTOR_STATUS_UART (0)
 
 /*
- * Motors on the right side are mirrored on a typical four-wheel chassis.
- * Change an individual sign if that wheel rotates opposite to the command.
+ * Wheel layout:
+ *   C left-front, B right-front
+ *   D left-rear,  A right-rear
+ * Right-side motors are typically mirrored; flip one sign if a wheel
+ * runs opposite to the chassis command.
  */
-#define MOTOR_A_FORWARD_SIGN (1)
-#define MOTOR_B_FORWARD_SIGN (1)
-#define MOTOR_C_FORWARD_SIGN (-1)
-#define MOTOR_D_FORWARD_SIGN (-1)
+#define MOTOR_A_FORWARD_SIGN (-1)
+#define MOTOR_B_FORWARD_SIGN (-1)
+#define MOTOR_C_FORWARD_SIGN (1)
+#define MOTOR_D_FORWARD_SIGN (1)
 
 static MotorControl gMotorA;
 static const MotorControl_Config gMotorAConfig = {
@@ -162,6 +166,7 @@ static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
 static int16_t gCarSpeedRpm = CAR_DEFAULT_SPEED_RPM;
 
+#if ENABLE_MOTOR_STATUS_UART
 static void UART_sendString(const char *text)
 {
     while (*text != '\0') {
@@ -222,18 +227,20 @@ static void UART_reportMotorStatus(
     UART_sendInt32((int32_t) status->pwmPercent);
     UART_sendString("]");
 }
+#endif
 
 static void Car_setWheelRpm(int16_t leftRearRpm, int16_t leftFrontRpm,
     int16_t rightFrontRpm, int16_t rightRearRpm)
 {
+    /* A=right-rear, B=right-front, C=left-front, D=left-rear */
     MotorControl_setTargetRpm(
-        &gMotorA, (int16_t) (leftRearRpm * MOTOR_A_FORWARD_SIGN));
+        &gMotorA, (int16_t) (rightRearRpm * MOTOR_A_FORWARD_SIGN));
     MotorControl_setTargetRpm(
-        &gMotorB, (int16_t) (leftFrontRpm * MOTOR_B_FORWARD_SIGN));
+        &gMotorB, (int16_t) (rightFrontRpm * MOTOR_B_FORWARD_SIGN));
     MotorControl_setTargetRpm(
-        &gMotorC, (int16_t) (rightFrontRpm * MOTOR_C_FORWARD_SIGN));
+        &gMotorC, (int16_t) (leftFrontRpm * MOTOR_C_FORWARD_SIGN));
     MotorControl_setTargetRpm(
-        &gMotorD, (int16_t) (rightRearRpm * MOTOR_D_FORWARD_SIGN));
+        &gMotorD, (int16_t) (leftRearRpm * MOTOR_D_FORWARD_SIGN));
 }
 
 static bool Car_parseCommandSpeed(
@@ -299,8 +306,8 @@ static void Car_processUartCommand(void)
         Car_setWheelRpm(0, 0, 0, 0);
         return;
     }
-    if ((command != 'W') && (command != 'S') &&
-        (command != 'A') && (command != 'D')) {
+    if ((command != 'F') && (command != 'B') &&
+        (command != 'L') && (command != 'R')) {
         return;
     }
     if (!Car_parseCommandSpeed(index, &speedRpm, &speedSpecified)) {
@@ -311,16 +318,16 @@ static void Car_processUartCommand(void)
     }
 
     switch (command) {
-        case 'W':
+        case 'F':
             Car_setWheelRpm(speedRpm, speedRpm, speedRpm, speedRpm);
             break;
-        case 'S':
+        case 'B':
             Car_setWheelRpm(-speedRpm, -speedRpm, -speedRpm, -speedRpm);
             break;
-        case 'A':
+        case 'L':
             Car_setWheelRpm(-speedRpm, -speedRpm, speedRpm, speedRpm);
             break;
-        case 'D':
+        case 'R':
             Car_setWheelRpm(speedRpm, speedRpm, -speedRpm, -speedRpm);
             break;
         default:
@@ -333,12 +340,8 @@ int main(void)
     SYSCFG_DL_init();
 
     /*
-     * TB6612 motor A: PA12/PB6/PB7, encoder PB0/PB16.
-     * TB6612 motor B: PA13/PB8/PB15, encoder PB17/PB12.
-     * TB6612 motor C: PA8/PA26/PB24, encoder PB9/PA27.
-     * TB6612 motor D: PA22/PB18/PA18, encoder PA24/PA17.
-     *
-     * UART remote control: W/S/A/D [rpm], X stops the car.
+     * Wheel map: A right-rear, B right-front, C left-front, D left-rear.
+     * UART remote control: F/B/L/R [rpm], X stops the car.
      * Target 0 actively brakes to the deadband, then short-brakes.
      */
     MotorControl_init(&gMotorA, &gMotorAConfig);
@@ -358,47 +361,52 @@ int main(void)
     DL_TimerA_startCounter(TIMER_PID_INST);
 
     while (1) {
-        static MotorControl_Status motorAStatus;
-        static MotorControl_Status motorBStatus;
-        static MotorControl_Status motorCStatus;
-        static MotorControl_Status motorDStatus;
-        static bool motorAStatusReady;
-        static bool motorBStatusReady;
-        static bool motorCStatusReady;
-        static bool motorDStatusReady;
-
         if (gUartCommandReady) {
             Car_processUartCommand();
             gUartCommandReady = false;
         }
 
-        if (MotorControl_takeStatus(&gMotorA, &motorAStatus)) {
-            motorAStatusReady = true;
+        /* Motor status UART output temporarily disabled. */
+#if ENABLE_MOTOR_STATUS_UART
+        {
+            static MotorControl_Status motorAStatus;
+            static MotorControl_Status motorBStatus;
+            static MotorControl_Status motorCStatus;
+            static MotorControl_Status motorDStatus;
+            static bool motorAStatusReady;
+            static bool motorBStatusReady;
+            static bool motorCStatusReady;
+            static bool motorDStatusReady;
+
+            if (MotorControl_takeStatus(&gMotorA, &motorAStatus)) {
+                motorAStatusReady = true;
+            }
+            if (MotorControl_takeStatus(&gMotorB, &motorBStatus)) {
+                motorBStatusReady = true;
+            }
+            if (MotorControl_takeStatus(&gMotorC, &motorCStatus)) {
+                motorCStatusReady = true;
+            }
+            if (MotorControl_takeStatus(&gMotorD, &motorDStatus)) {
+                motorDStatusReady = true;
+            }
+            if (motorAStatusReady && motorBStatusReady &&
+                motorCStatusReady && motorDStatusReady) {
+                UART_reportMotorStatus('A', &motorAStatus);
+                UART_sendString(",");
+                UART_reportMotorStatus('B', &motorBStatus);
+                UART_sendString(",");
+                UART_reportMotorStatus('C', &motorCStatus);
+                UART_sendString(",");
+                UART_reportMotorStatus('D', &motorDStatus);
+                UART_sendString("\r\n");
+                motorAStatusReady = false;
+                motorBStatusReady = false;
+                motorCStatusReady = false;
+                motorDStatusReady = false;
+            }
         }
-        if (MotorControl_takeStatus(&gMotorB, &motorBStatus)) {
-            motorBStatusReady = true;
-        }
-        if (MotorControl_takeStatus(&gMotorC, &motorCStatus)) {
-            motorCStatusReady = true;
-        }
-        if (MotorControl_takeStatus(&gMotorD, &motorDStatus)) {
-            motorDStatusReady = true;
-        }
-        if (motorAStatusReady && motorBStatusReady &&
-            motorCStatusReady && motorDStatusReady) {
-            UART_reportMotorStatus('A', &motorAStatus);
-            UART_sendString(",");
-            UART_reportMotorStatus('B', &motorBStatus);
-            UART_sendString(",");
-            UART_reportMotorStatus('C', &motorCStatus);
-            UART_sendString(",");
-            UART_reportMotorStatus('D', &motorDStatus);
-            UART_sendString("\r\n");
-            motorAStatusReady = false;
-            motorBStatusReady = false;
-            motorCStatusReady = false;
-            motorDStatusReady = false;
-        }
+#endif
         __WFI();
     }
 }
