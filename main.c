@@ -51,12 +51,17 @@
 #define PID_KD (0.2f)
 #define PID_OUTPUT_MAX_PERCENT (99.0f)
 #define MOTOR_MAX_TARGET_RPM (1000U)
+#define ZERO_SPEED_THRESHOLD_COUNTS (1)
+#define ZERO_BRAKE_KP (1.5f)
+#define ZERO_BRAKE_MIN_PERCENT (8.0f)
+#define ZERO_BRAKE_MAX_PERCENT (40.0f)
 
 static volatile uint16_t gRxValue;
 static volatile uint8_t gRxDigitCount;
 static volatile bool gRxInvalid;
-static volatile uint16_t gTargetRpm;
-static volatile uint8_t gMotorPwmPercent;
+static volatile bool gRxNegative;
+static volatile int16_t gTargetRpm;
+static volatile int16_t gMotorPwmPercent;
 static volatile int32_t gEncoderCount;
 static volatile int32_t gSpeedCountsPer10ms;
 static volatile int32_t gSpeedReportCountAccumulator;
@@ -66,6 +71,8 @@ static volatile bool gSpeedReportReady;
 static float gPidOutput;
 static float gPidLastError;
 static float gPidPreviousError;
+static int8_t gPidDirection;
+static int8_t gZeroBrakeEncoderDirection;
 
 static void UART_sendString(const char *text)
 {
@@ -102,7 +109,7 @@ static void UART_sendInt32(int32_t value)
 }
 
 static void UART_reportStatus(int32_t speedCountsPer100ms,
-    uint16_t targetRpm, uint8_t pwmPercent)
+    int16_t targetRpm, int16_t pwmPercent)
 {
     int32_t rpmTimes10Numerator = speedCountsPer100ms * 6000;
     int32_t rpmTimes10;
@@ -139,29 +146,39 @@ static void UART_reportStatus(int32_t speedCountsPer100ms,
     UART_sendString("\r\n");
 }
 
-static void Motor_setSpeedPercent(uint8_t speedPercent)
+static void Motor_setSpeedPercent(int16_t speedPercent)
 {
     uint32_t compareValue;
+    uint16_t speedMagnitude;
 
-    if (speedPercent > 100U) {
-        speedPercent = 100U;
+    if (speedPercent > 100) {
+        speedPercent = 100;
+    } else if (speedPercent < -100) {
+        speedPercent = -100;
     }
 
-    if (speedPercent == 0U) {
-        /* Short-brake and force 0% PWM so the motor actually stops. */
-        DL_GPIO_clearPins(GPIO_MOTOR_A_PORT,
+    if (speedPercent == 0) {
+        /* IN1=IN2=1 selects TB6612 short-brake mode. */
+        DL_GPIO_setPins(GPIO_MOTOR_A_PORT,
             GPIO_MOTOR_A_AIN_1_PIN | GPIO_MOTOR_A_AIN_2_PIN);
         compareValue = MOTOR_PWM_LOAD_VALUE;
     } else {
-        DL_GPIO_setPins(GPIO_MOTOR_A_PORT, GPIO_MOTOR_A_AIN_1_PIN);
-        DL_GPIO_clearPins(GPIO_MOTOR_A_PORT, GPIO_MOTOR_A_AIN_2_PIN);
+        if (speedPercent > 0) {
+            DL_GPIO_setPins(GPIO_MOTOR_A_PORT, GPIO_MOTOR_A_AIN_1_PIN);
+            DL_GPIO_clearPins(GPIO_MOTOR_A_PORT, GPIO_MOTOR_A_AIN_2_PIN);
+            speedMagnitude = (uint16_t) speedPercent;
+        } else {
+            DL_GPIO_clearPins(GPIO_MOTOR_A_PORT, GPIO_MOTOR_A_AIN_1_PIN);
+            DL_GPIO_setPins(GPIO_MOTOR_A_PORT, GPIO_MOTOR_A_AIN_2_PIN);
+            speedMagnitude = (uint16_t) (-speedPercent);
+        }
 
         /*
          * Edge-aligned PWM: high on LOAD, low on compare-down.
          * duty% rises as compare falls; compare=0 -> ~100%, compare=LOAD -> ~0%.
          */
         compareValue =
-            (MOTOR_PWM_PERIOD_COUNTS * (100U - (uint32_t) speedPercent)) /
+            (MOTOR_PWM_PERIOD_COUNTS * (100U - speedMagnitude)) /
             100U;
         if (compareValue > MOTOR_PWM_LOAD_VALUE) {
             compareValue = MOTOR_PWM_LOAD_VALUE;
@@ -179,27 +196,70 @@ static void PID_reset(void)
     gPidPreviousError = 0.0f;
 }
 
-static uint8_t PID_update(
-    int32_t measuredCountsPer10ms, uint16_t targetRpm)
+static int16_t PID_update(
+    int32_t measuredCountsPer10ms, int16_t targetRpm)
 {
+    int8_t requestedDirection;
+    int8_t measuredDirection;
+    uint16_t targetMagnitudeRpm;
     float targetCountsPer10ms;
     float measuredCounts;
+    float brakeOutput;
     float error;
     float increment;
-
-    if (targetRpm == 0U) {
-        PID_reset();
-        return 0U;
-    }
-
-    targetCountsPer10ms =
-        ((float) targetRpm *
-            (float) ENCODER_COUNTS_PER_OUTPUT_REVOLUTION) /
-        (60.0f * (float) PID_SAMPLE_RATE_HZ);
 
     measuredCounts = (measuredCountsPer10ms < 0) ?
         (float) (-measuredCountsPer10ms) :
         (float) measuredCountsPer10ms;
+
+    if (targetRpm == 0) {
+        PID_reset();
+
+        if ((gPidDirection == 0) ||
+            (measuredCountsPer10ms >= -ZERO_SPEED_THRESHOLD_COUNTS &&
+             measuredCountsPer10ms <= ZERO_SPEED_THRESHOLD_COUNTS)) {
+            gZeroBrakeEncoderDirection = 0;
+            return 0;
+        }
+
+        measuredDirection = (measuredCountsPer10ms > 0) ? 1 : -1;
+        if (gZeroBrakeEncoderDirection == 0) {
+            gZeroBrakeEncoderDirection = measuredDirection;
+        } else if (measuredDirection != gZeroBrakeEncoderDirection) {
+            /*
+             * The shaft has crossed zero. Stop active reverse torque and
+             * hold with short-brake instead of accelerating the other way.
+             */
+            gZeroBrakeEncoderDirection = 0;
+            return 0;
+        }
+
+        brakeOutput = ZERO_BRAKE_KP * measuredCounts;
+        if (brakeOutput > ZERO_BRAKE_MAX_PERCENT) {
+            brakeOutput = ZERO_BRAKE_MAX_PERCENT;
+        } else if (brakeOutput < ZERO_BRAKE_MIN_PERCENT) {
+            brakeOutput = ZERO_BRAKE_MIN_PERCENT;
+        }
+
+        return (int16_t) (-gPidDirection *
+            (int16_t) (brakeOutput + 0.5f));
+    }
+
+    requestedDirection = (targetRpm > 0) ? 1 : -1;
+    targetMagnitudeRpm = (targetRpm > 0) ?
+        (uint16_t) targetRpm : (uint16_t) (-targetRpm);
+
+    if (requestedDirection != gPidDirection) {
+        PID_reset();
+        gPidDirection = requestedDirection;
+    }
+    gZeroBrakeEncoderDirection = 0;
+
+    targetCountsPer10ms =
+        ((float) targetMagnitudeRpm *
+            (float) ENCODER_COUNTS_PER_OUTPUT_REVOLUTION) /
+        (60.0f * (float) PID_SAMPLE_RATE_HZ);
+
     error = targetCountsPer10ms - measuredCounts;
 
     increment =
@@ -218,7 +278,8 @@ static uint8_t PID_update(
     gPidPreviousError = gPidLastError;
     gPidLastError = error;
 
-    return (uint8_t) (gPidOutput + 0.5f);
+    return (int16_t) (requestedDirection *
+        (int16_t) (gPidOutput + 0.5f));
 }
 
 int main(void)
@@ -231,8 +292,8 @@ int main(void)
      *   PB6  -> AIN1
      *   PB7  -> AIN2
      *
-     * UART ASCII "0".."1000" + CR/LF sets target output-shaft RPM.
-     * Target 0 short-brakes; target > 0 runs closed-loop forward.
+     * UART ASCII "-1000".."1000" + CR/LF sets target output-shaft RPM.
+     * Target 0 short-brakes; positive runs forward and negative reverses.
      */
     Motor_setSpeedPercent(MOTOR_INITIAL_SPEED_PERCENT);
     DL_TimerG_startCounter(PWM_MOTOR_A_INST);
@@ -249,8 +310,8 @@ int main(void)
     while (1) {
         if (gSpeedReportReady) {
             int32_t speed = gSpeedCountsPer100ms;
-            uint16_t targetRpm = gTargetRpm;
-            uint8_t pwmPercent = gMotorPwmPercent;
+            int16_t targetRpm = gTargetRpm;
+            int16_t pwmPercent = gMotorPwmPercent;
             gSpeedReportReady = false;
             UART_reportStatus(speed, targetRpm, pwmPercent);
         }
@@ -284,6 +345,7 @@ void TIMER_PID_INST_IRQHandler(void)
 {
     switch (DL_TimerA_getPendingInterrupt(TIMER_PID_INST)) {
         case DL_TIMER_IIDX_ZERO:
+        {
             gSpeedCountsPer10ms = gEncoderCount;
             gEncoderCount = 0;
             gMotorPwmPercent =
@@ -299,6 +361,7 @@ void TIMER_PID_INST_IRQHandler(void)
                 gSpeedReportReady = true;
             }
             break;
+        }
         default:
             break;
     }
@@ -312,7 +375,11 @@ void UART_0_INST_IRQHandler(void)
         case DL_UART_MAIN_IIDX_RX:
             rxData = DL_UART_Main_receiveData(UART_0_INST);
 
-            if ((rxData >= (uint8_t) '0') && (rxData <= (uint8_t) '9')) {
+            if ((rxData == (uint8_t) '-') &&
+                (gRxDigitCount == 0U) && !gRxNegative) {
+                gRxNegative = true;
+            } else if ((rxData >= (uint8_t) '0') &&
+                       (rxData <= (uint8_t) '9')) {
                 uint16_t newValue =
                     (gRxValue * 10U) + (uint16_t) (rxData - (uint8_t) '0');
 
@@ -326,16 +393,19 @@ void UART_0_INST_IRQHandler(void)
             } else if ((rxData == (uint8_t) '\r') ||
                        (rxData == (uint8_t) '\n')) {
                 if ((gRxDigitCount > 0U) && !gRxInvalid) {
-                    gTargetRpm = gRxValue;
+                    gTargetRpm = gRxNegative ?
+                        -(int16_t) gRxValue : (int16_t) gRxValue;
                 }
 
                 gRxValue      = 0U;
                 gRxDigitCount = 0U;
                 gRxInvalid    = false;
+                gRxNegative   = false;
             } else {
                 gRxValue      = 0U;
                 gRxDigitCount = 0U;
                 gRxInvalid    = false;
+                gRxNegative   = false;
             }
             break;
         default:
