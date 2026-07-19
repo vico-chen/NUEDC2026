@@ -11,7 +11,8 @@ SYSCFG_SRCS += \
 C_SRCS += \
 ../main.c \
 ./ti_msp_dl_config.c \
-C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c 
+C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c \
+../motor_control.c 
 
 GEN_CMDS += \
 ./device_linker.cmd 
@@ -24,7 +25,8 @@ GEN_FILES += \
 C_DEPS += \
 ./main.d \
 ./ti_msp_dl_config.d \
-./startup_mspm0g350x_ticlang.d 
+./startup_mspm0g350x_ticlang.d \
+./motor_control.d 
 
 GEN_OPTS += \
 ./device.opt 
@@ -32,7 +34,8 @@ GEN_OPTS += \
 OBJS += \
 ./main.o \
 ./ti_msp_dl_config.o \
-./startup_mspm0g350x_ticlang.o 
+./startup_mspm0g350x_ticlang.o \
+./motor_control.o 
 
 GEN_MISC_FILES += \
 ./device.cmd.genlibs \
@@ -42,7 +45,8 @@ GEN_MISC_FILES += \
 OBJS__QUOTED += \
 "main.o" \
 "ti_msp_dl_config.o" \
-"startup_mspm0g350x_ticlang.o" 
+"startup_mspm0g350x_ticlang.o" \
+"motor_control.o" 
 
 GEN_MISC_FILES__QUOTED += \
 "device.cmd.genlibs" \
@@ -52,7 +56,8 @@ GEN_MISC_FILES__QUOTED += \
 C_DEPS__QUOTED += \
 "main.d" \
 "ti_msp_dl_config.d" \
-"startup_mspm0g350x_ticlang.d" 
+"startup_mspm0g350x_ticlang.d" \
+"motor_control.d" 
 
 GEN_FILES__QUOTED += \
 "device_linker.cmd" \
@@ -62,7 +67,8 @@ GEN_FILES__QUOTED += \
 C_SRCS__QUOTED += \
 "../main.c" \
 "./ti_msp_dl_config.c" \
-"C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" 
+"C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" \
+"../motor_control.c" 
 
 SYSCFG_SRCS__QUOTED += \
 "../main.syscfg" 
