@@ -11,18 +11,18 @@ SHELL = cmd.exe
 	@echo 'Finished building: "$<"'
 	@echo ' '
 
-build-1726175699: ../main.syscfg
+build-1142829326: ../main.syscfg
 	@echo 'SysConfig - building file: "$<"'
 	"C:/ti/ccs2100/ccs/utils/sysconfig_1.28.0/sysconfig_cli.bat" -s "C:/ti/mspm0_sdk_2_11_00_07/.metadata/product.json" -s "C:/ti/mspm0_sdk_2_11_00_07/.metadata/product.json" --script "C:/Users/Vico/Desktop/26NUEDC/Code/main/NUEDC2026/main.syscfg" -o "." --compiler ticlang
 	@echo 'Finished building: "$<"'
 	@echo ' '
 
-device_linker.cmd: build-1726175699 ../main.syscfg
-device.opt: build-1726175699
-device.cmd.genlibs: build-1726175699
-ti_msp_dl_config.c: build-1726175699
-ti_msp_dl_config.h: build-1726175699
-Event.dot: build-1726175699
+device_linker.cmd: build-1142829326 ../main.syscfg
+device.opt: build-1142829326
+device.cmd.genlibs: build-1142829326
+ti_msp_dl_config.c: build-1142829326
+ti_msp_dl_config.h: build-1142829326
+Event.dot: build-1142829326
 
 %.o: ./%.c $(GEN_OPTS) | $(GEN_FILES) $(GEN_MISC_FILES)
 	@echo 'Arm Compiler - building file: "$<"'

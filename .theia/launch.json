@@ -1,16 +1,14 @@
 {
-  // 使用 IntelliSense 了解相关属性。 
-  // 悬停以查看现有属性的描述。
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Motor",
-      "type": "ccs-debug",
-      "request": "launch",
-      "projectInfo": {
-        "name": "Motor",
-        "resourceId": "/Motor"
-      }
-    }
-  ]
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "main",
+            "type": "ccs-debug",
+            "request": "launch",
+            "projectInfo": {
+                "name": "main",
+                "resourceId": "/main"
+            }
+        }
+    ]
 }
