@@ -124,18 +124,19 @@ extern "C" {
 
 
 
-/* Defines for I2C_0 */
-#define I2C_0_INST                                                          I2C0
-#define I2C_0_INST_IRQHandler                                    I2C0_IRQHandler
-#define I2C_0_INST_INT_IRQN                                        I2C0_INT_IRQn
-#define GPIO_I2C_0_SDA_PORT                                                GPIOA
-#define GPIO_I2C_0_SDA_PIN                                         DL_GPIO_PIN_0
-#define GPIO_I2C_0_IOMUX_SDA                                      (IOMUX_PINCM1)
-#define GPIO_I2C_0_IOMUX_SDA_FUNC                       IOMUX_PINCM1_PF_I2C0_SDA
-#define GPIO_I2C_0_SCL_PORT                                                GPIOA
-#define GPIO_I2C_0_SCL_PIN                                         DL_GPIO_PIN_1
-#define GPIO_I2C_0_IOMUX_SCL                                      (IOMUX_PINCM2)
-#define GPIO_I2C_0_IOMUX_SCL_FUNC                       IOMUX_PINCM2_PF_I2C0_SCL
+/* Defines for I2C_MPU6050 */
+#define I2C_MPU6050_INST                                                    I2C0
+#define I2C_MPU6050_INST_IRQHandler                              I2C0_IRQHandler
+#define I2C_MPU6050_INST_INT_IRQN                                  I2C0_INT_IRQn
+#define I2C_MPU6050_BUS_SPEED_HZ                                          400000
+#define GPIO_I2C_MPU6050_SDA_PORT                                          GPIOA
+#define GPIO_I2C_MPU6050_SDA_PIN                                  DL_GPIO_PIN_28
+#define GPIO_I2C_MPU6050_IOMUX_SDA                                (IOMUX_PINCM3)
+#define GPIO_I2C_MPU6050_IOMUX_SDA_FUNC                 IOMUX_PINCM3_PF_I2C0_SDA
+#define GPIO_I2C_MPU6050_SCL_PORT                                          GPIOA
+#define GPIO_I2C_MPU6050_SCL_PIN                                  DL_GPIO_PIN_31
+#define GPIO_I2C_MPU6050_IOMUX_SCL                                (IOMUX_PINCM6)
+#define GPIO_I2C_MPU6050_IOMUX_SCL_FUNC                 IOMUX_PINCM6_PF_I2C0_SCL
 
 
 /* Defines for UART_0 */
@@ -260,7 +261,7 @@ void SYSCFG_DL_SYSCTL_init(void);
 void SYSCFG_DL_PWM_MOTOR_AB_init(void);
 void SYSCFG_DL_PWM_MOTOR_CD_init(void);
 void SYSCFG_DL_TIMER_PID_init(void);
-void SYSCFG_DL_I2C_0_init(void);
+void SYSCFG_DL_I2C_MPU6050_init(void);
 void SYSCFG_DL_UART_0_init(void);
 void SYSCFG_DL_UART_1_init(void);
 

@@ -13,7 +13,8 @@ C_SRCS += \
 ../main.c \
 ./ti_msp_dl_config.c \
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c \
-../motor_control.c 
+../motor_control.c \
+../mpu6050_angle.c 
 
 GEN_CMDS += \
 ./device_linker.cmd 
@@ -28,7 +29,8 @@ C_DEPS += \
 ./main.d \
 ./ti_msp_dl_config.d \
 ./startup_mspm0g350x_ticlang.d \
-./motor_control.d 
+./motor_control.d \
+./mpu6050_angle.d 
 
 GEN_OPTS += \
 ./device.opt 
@@ -38,7 +40,8 @@ OBJS += \
 ./main.o \
 ./ti_msp_dl_config.o \
 ./startup_mspm0g350x_ticlang.o \
-./motor_control.o 
+./motor_control.o \
+./mpu6050_angle.o 
 
 GEN_MISC_FILES += \
 ./device.cmd.genlibs \
@@ -50,7 +53,8 @@ OBJS__QUOTED += \
 "main.o" \
 "ti_msp_dl_config.o" \
 "startup_mspm0g350x_ticlang.o" \
-"motor_control.o" 
+"motor_control.o" \
+"mpu6050_angle.o" 
 
 GEN_MISC_FILES__QUOTED += \
 "device.cmd.genlibs" \
@@ -62,7 +66,8 @@ C_DEPS__QUOTED += \
 "main.d" \
 "ti_msp_dl_config.d" \
 "startup_mspm0g350x_ticlang.d" \
-"motor_control.d" 
+"motor_control.d" \
+"mpu6050_angle.d" 
 
 GEN_FILES__QUOTED += \
 "device_linker.cmd" \
@@ -74,7 +79,8 @@ C_SRCS__QUOTED += \
 "../main.c" \
 "./ti_msp_dl_config.c" \
 "C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" \
-"../motor_control.c" 
+"../motor_control.c" \
+"../mpu6050_angle.c" 
 
 SYSCFG_SRCS__QUOTED += \
 "../main.syscfg" 

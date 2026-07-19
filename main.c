@@ -33,6 +33,7 @@
 #include "ti_msp_dl_config.h"
 #include "motor_control.h"
 #include "car_control.h"
+#include "mpu6050_angle.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -181,8 +182,9 @@ static const CarControl_Config gCarConfig = {
 static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
+static volatile bool gMpu6050SampleDue;
+static bool gMpu6050Ready;
 
-#if ENABLE_MOTOR_STATUS_UART
 static void UART_sendString(const char *text)
 {
     while (*text != '\0') {
@@ -217,6 +219,17 @@ static void UART_sendInt32(int32_t value)
     }
 }
 
+static void UART_sendHex8(uint8_t value)
+{
+    static const char hexDigits[] = "0123456789ABCDEF";
+
+    DL_UART_Main_transmitDataBlocking(
+        UART_0_INST, (uint8_t) hexDigits[(value >> 4) & 0x0FU]);
+    DL_UART_Main_transmitDataBlocking(
+        UART_0_INST, (uint8_t) hexDigits[value & 0x0FU]);
+}
+
+#if ENABLE_MOTOR_STATUS_UART
 static void UART_reportMotorStatus(
     char motorName, const MotorControl_Status *status)
 {
@@ -244,6 +257,34 @@ static void UART_reportMotorStatus(
     UART_sendString("]");
 }
 #endif
+
+static void UART_reportZAngle(void)
+{
+    float angle = MPU6050_Angle_getZDegrees();
+    int32_t angleTimes10;
+    uint32_t magnitude;
+
+    if (!gMpu6050Ready) {
+        UART_sendString("MPU6050_ERROR\r\n");
+        return;
+    }
+
+    angleTimes10 =
+        (int32_t) ((angle >= 0.0f) ? (angle * 10.0f + 0.5f)
+                                   : (angle * 10.0f - 0.5f));
+    UART_sendString("z_angle=");
+    if (angleTimes10 < 0) {
+        DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) '-');
+        magnitude = (uint32_t) (-(angleTimes10 + 1)) + 1U;
+    } else {
+        magnitude = (uint32_t) angleTimes10;
+    }
+    UART_sendInt32((int32_t) (magnitude / 10U));
+    DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) '.');
+    DL_UART_Main_transmitDataBlocking(
+        UART_0_INST, (uint8_t) ('0' + (magnitude % 10U)));
+    UART_sendString(" deg\r\n");
+}
 
 static bool Car_parseUnsignedValue(
     uint8_t *index, uint16_t maximum, uint16_t *value)
@@ -356,6 +397,28 @@ static void Car_processUartCommand(void)
         CarControl_stop(&gCar);
         return;
     }
+    if (command == 'Y') {
+        while ((gUartCommand[index] == ' ') ||
+               (gUartCommand[index] == '\t')) {
+            index++;
+        }
+        if (gUartCommand[index] == '0') {
+            index++;
+            while ((gUartCommand[index] == ' ') ||
+                   (gUartCommand[index] == '\t')) {
+                index++;
+            }
+            if (gUartCommand[index] == '\0') {
+                MPU6050_Angle_reset();
+                UART_sendString("z_angle reset to 0.0 deg\r\n");
+            }
+            return;
+        }
+        if (gUartCommand[index] == '\0') {
+            UART_reportZAngle();
+        }
+        return;
+    }
     if ((command != 'F') && (command != 'B') &&
         (command != 'L') && (command != 'R')) {
         return;
@@ -416,6 +479,17 @@ int main(void)
     MotorControl_init(&gMotorD, &gMotorDConfig);
     CarControl_init(&gCar, &gCarConfig);
 
+    UART_sendString(
+        "\r\nMPU6050: keep car still for 5 seconds (calibrating)...\r\n");
+    gMpu6050Ready = MPU6050_Angle_init();
+    if (gMpu6050Ready) {
+        UART_sendString("MPU6050 ready, WHO_AM_I=0x");
+        UART_sendHex8((uint8_t) MPU6050_Angle_getDeviceId());
+        UART_sendString(". Send Y to read angle, Y0 to reset.\r\n");
+    } else {
+        UART_sendString("MPU6050 init failed.\r\n");
+    }
+
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);
     NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
@@ -428,6 +502,14 @@ int main(void)
     DL_TimerA_startCounter(TIMER_PID_INST);
 
     while (1) {
+        if (gMpu6050SampleDue) {
+            gMpu6050SampleDue = false;
+            if (gMpu6050Ready && !MPU6050_Angle_update()) {
+                gMpu6050Ready = false;
+                UART_sendString("MPU6050 read failed.\r\n");
+            }
+        }
+
         if (gUartCommandReady) {
             Car_processUartCommand();
             gUartCommandReady = false;
@@ -510,6 +592,7 @@ void TIMER_PID_INST_IRQHandler(void)
             MotorControl_update(&gMotorB);
             MotorControl_update(&gMotorC);
             MotorControl_update(&gMotorD);
+            gMpu6050SampleDue = true;
             break;
         default:
             break;
