@@ -36,11 +36,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define MOTOR_A_MAX_TARGET_RPM (1000U)
+#define MOTOR_MAX_TARGET_RPM (1000U)
+#define MOTOR_COUNT (2U)
 
 static MotorControl gMotorA;
 static const MotorControl_Config gMotorAConfig = {
-    .pwmInstance = PWM_MOTOR_A_INST,
+    .pwmInstance = PWM_MOTOR_AB_INST,
     .pwmChannel = DL_TIMER_CC_0_INDEX,
     .directionPort = GPIO_MOTOR_A_PORT,
     .directionIn1Pin = GPIO_MOTOR_A_AIN_1_PIN,
@@ -54,7 +55,7 @@ static const MotorControl_Config gMotorAConfig = {
     .encoderDecodeMultiplier = 2U,
     .sampleRateHz = 100U,
     .reportSamples = 10U,
-    .maxTargetRpm = (int16_t) MOTOR_A_MAX_TARGET_RPM,
+    .maxTargetRpm = (int16_t) MOTOR_MAX_TARGET_RPM,
     .zeroSpeedDeadbandCounts = 1,
     .kp = 5.0f,
     .ki = 1.0f,
@@ -63,8 +64,35 @@ static const MotorControl_Config gMotorAConfig = {
     .zeroSpeedBrakeMaxPercent = 40.0f,
 };
 
+static MotorControl gMotorB;
+static const MotorControl_Config gMotorBConfig = {
+    .pwmInstance = PWM_MOTOR_AB_INST,
+    .pwmChannel = DL_TIMER_CC_1_INDEX,
+    .directionPort = GPIO_MOTOR_B_PORT,
+    .directionIn1Pin = GPIO_MOTOR_B_BIN_1_PIN,
+    .directionIn2Pin = GPIO_MOTOR_B_BIN_2_PIN,
+    .encoderPort = GPIO_MOTOR_B_PORT,
+    .encoderPhaseAPin = GPIO_MOTOR_B_EA_2_PIN,
+    .encoderPhaseBPin = GPIO_MOTOR_B_EB_2_PIN,
+    .pwmPeriodCounts = 100U,
+    .encoderPpr = 13U,
+    .gearRatio = 20U,
+    .encoderDecodeMultiplier = 2U,
+    .sampleRateHz = 100U,
+    .reportSamples = 10U,
+    .maxTargetRpm = (int16_t) MOTOR_MAX_TARGET_RPM,
+    .zeroSpeedDeadbandCounts = 1,
+    .kp = 5.0f,
+    .ki = 1.0f,
+    .kd = 0.2f,
+    .outputMaxPercent = 99.0f,
+    .zeroSpeedBrakeMaxPercent = 40.0f,
+};
+
+static volatile int16_t gRxTargets[MOTOR_COUNT];
 static volatile uint16_t gRxValue;
 static volatile uint8_t gRxDigitCount;
+static volatile uint8_t gRxMotorIndex;
 static volatile bool gRxInvalid;
 static volatile bool gRxNegative;
 
@@ -102,10 +130,13 @@ static void UART_sendInt32(int32_t value)
     }
 }
 
-static void UART_reportStatus(const MotorControl_Status *status)
+static void UART_reportMotorStatus(
+    char motorName, const MotorControl_Status *status)
 {
     uint32_t rpmMagnitude;
 
+    DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) motorName);
+    UART_sendString("[");
     UART_sendString("target_rpm=");
     UART_sendInt32((int32_t) status->targetRpm);
     UART_sendString(",speed_rpm=");
@@ -123,7 +154,31 @@ static void UART_reportStatus(const MotorControl_Status *status)
     UART_sendInt32(status->encoderCounts);
     UART_sendString(",pwm_percent=");
     UART_sendInt32((int32_t) status->pwmPercent);
-    UART_sendString("\r\n");
+    UART_sendString("]");
+}
+
+static void UART_finishTargetValue(void)
+{
+    if ((gRxDigitCount == 0U) || (gRxMotorIndex >= MOTOR_COUNT)) {
+        gRxInvalid = true;
+        return;
+    }
+
+    gRxTargets[gRxMotorIndex] = gRxNegative ?
+        -(int16_t) gRxValue : (int16_t) gRxValue;
+    gRxMotorIndex++;
+    gRxValue = 0U;
+    gRxDigitCount = 0U;
+    gRxNegative = false;
+}
+
+static void UART_resetCommand(void)
+{
+    gRxValue = 0U;
+    gRxDigitCount = 0U;
+    gRxMotorIndex = 0U;
+    gRxInvalid = false;
+    gRxNegative = false;
 }
 
 int main(void)
@@ -131,31 +186,44 @@ int main(void)
     SYSCFG_DL_init();
 
     /*
-     * TB6612 motor A:
-     *   PA12 -> PWMA
-     *   PB6  -> AIN1
-     *   PB7  -> AIN2
+     * TB6612 motor A: PA12/PB6/PB7, encoder PB0/PB16.
+     * TB6612 motor B: PA13/PB8/PB15, encoder PB17/PB12.
      *
-     * UART ASCII "-1000".."1000" + CR/LF sets target output-shaft RPM.
+     * UART "<motorA_rpm> <motorB_rpm>" + CR/LF sets both target RPM.
      * Target 0 actively brakes to the deadband, then short-brakes.
      * Positive runs forward and negative reverses.
      */
     MotorControl_init(&gMotorA, &gMotorAConfig);
+    MotorControl_init(&gMotorB, &gMotorBConfig);
 
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);
-    NVIC_ClearPendingIRQ(GPIO_MOTOR_A_INT_IRQN);
-    NVIC_EnableIRQ(GPIO_MOTOR_A_INT_IRQN);
+    NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
+    NVIC_EnableIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
     NVIC_ClearPendingIRQ(TIMER_PID_INST_INT_IRQN);
     NVIC_EnableIRQ(TIMER_PID_INST_INT_IRQN);
 
     DL_TimerA_startCounter(TIMER_PID_INST);
 
     while (1) {
-        MotorControl_Status status;
+        static MotorControl_Status motorAStatus;
+        static MotorControl_Status motorBStatus;
+        static bool motorAStatusReady;
+        static bool motorBStatusReady;
 
-        if (MotorControl_takeStatus(&gMotorA, &status)) {
-            UART_reportStatus(&status);
+        if (MotorControl_takeStatus(&gMotorA, &motorAStatus)) {
+            motorAStatusReady = true;
+        }
+        if (MotorControl_takeStatus(&gMotorB, &motorBStatus)) {
+            motorBStatusReady = true;
+        }
+        if (motorAStatusReady && motorBStatusReady) {
+            UART_reportMotorStatus('A', &motorAStatus);
+            UART_sendString(",");
+            UART_reportMotorStatus('B', &motorBStatus);
+            UART_sendString("\r\n");
+            motorAStatusReady = false;
+            motorBStatusReady = false;
         }
         __WFI();
     }
@@ -164,13 +232,16 @@ int main(void)
 void GROUP1_IRQHandler(void)
 {
     uint32_t interruptStatus = DL_GPIO_getEnabledInterruptStatus(
-        GPIO_MOTOR_A_PORT, GPIO_MOTOR_A_EB_1_PIN);
+        GPIOB, GPIO_MOTOR_A_EB_1_PIN | GPIO_MOTOR_B_EB_2_PIN);
 
     if ((interruptStatus & GPIO_MOTOR_A_EB_1_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorA);
-        DL_GPIO_clearInterruptStatus(
-            GPIO_MOTOR_A_PORT, GPIO_MOTOR_A_EB_1_PIN);
     }
+    if ((interruptStatus & GPIO_MOTOR_B_EB_2_PIN) != 0U) {
+        MotorControl_handleEncoderEdge(&gMotorB);
+    }
+
+    DL_GPIO_clearInterruptStatus(GPIOB, interruptStatus);
 }
 
 void TIMER_PID_INST_IRQHandler(void)
@@ -178,6 +249,7 @@ void TIMER_PID_INST_IRQHandler(void)
     switch (DL_TimerA_getPendingInterrupt(TIMER_PID_INST)) {
         case DL_TIMER_IIDX_ZERO:
             MotorControl_update(&gMotorA);
+            MotorControl_update(&gMotorB);
             break;
         default:
             break;
@@ -192,8 +264,12 @@ void UART_0_INST_IRQHandler(void)
         case DL_UART_MAIN_IIDX_RX:
             rxData = DL_UART_Main_receiveData(UART_0_INST);
 
-            if ((rxData == (uint8_t) '-') &&
-                (gRxDigitCount == 0U) && !gRxNegative) {
+            if (gRxInvalid &&
+                (rxData != (uint8_t) '\r') &&
+                (rxData != (uint8_t) '\n')) {
+                break;
+            } else if ((rxData == (uint8_t) '-') &&
+                       (gRxDigitCount == 0U) && !gRxNegative) {
                 gRxNegative = true;
             } else if ((rxData >= (uint8_t) '0') &&
                        (rxData <= (uint8_t) '9')) {
@@ -202,27 +278,33 @@ void UART_0_INST_IRQHandler(void)
 
                 gRxDigitCount++;
                 if ((gRxDigitCount > 4U) ||
-                    (newValue > MOTOR_A_MAX_TARGET_RPM)) {
+                    (newValue > MOTOR_MAX_TARGET_RPM)) {
                     gRxInvalid = true;
                 } else {
                     gRxValue = newValue;
                 }
+            } else if ((rxData == (uint8_t) ' ') ||
+                       (rxData == (uint8_t) '\t')) {
+                if (gRxDigitCount > 0U) {
+                    UART_finishTargetValue();
+                } else if (gRxNegative) {
+                    gRxInvalid = true;
+                }
             } else if ((rxData == (uint8_t) '\r') ||
                        (rxData == (uint8_t) '\n')) {
-                if ((gRxDigitCount > 0U) && !gRxInvalid) {
-                    MotorControl_setTargetRpm(&gMotorA, gRxNegative ?
-                        -(int16_t) gRxValue : (int16_t) gRxValue);
+                if (!gRxInvalid && (gRxDigitCount > 0U)) {
+                    UART_finishTargetValue();
+                } else if (gRxNegative) {
+                    gRxInvalid = true;
                 }
 
-                gRxValue      = 0U;
-                gRxDigitCount = 0U;
-                gRxInvalid    = false;
-                gRxNegative   = false;
+                if (!gRxInvalid && (gRxMotorIndex == MOTOR_COUNT)) {
+                    MotorControl_setTargetRpm(&gMotorA, gRxTargets[0]);
+                    MotorControl_setTargetRpm(&gMotorB, gRxTargets[1]);
+                }
+                UART_resetCommand();
             } else {
-                gRxValue      = 0U;
-                gRxDigitCount = 0U;
-                gRxInvalid    = false;
-                gRxNegative   = false;
+                gRxInvalid = true;
             }
             break;
         default:
