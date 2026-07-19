@@ -45,16 +45,27 @@
 #define ENCODER_COUNTS_PER_OUTPUT_REVOLUTION \
     (ENCODER_PPR * MOTOR_GEAR_RATIO * ENCODER_DECODE_MULTIPLIER)
 #define SPEED_REPORT_SAMPLES (10U)
+#define PID_SAMPLE_RATE_HZ (100U)
+#define PID_KP (5.0f)
+#define PID_KI (1.0f)
+#define PID_KD (0.2f)
+#define PID_OUTPUT_MAX_PERCENT (99.0f)
+#define MOTOR_MAX_TARGET_RPM (1000U)
 
 static volatile uint16_t gRxValue;
 static volatile uint8_t gRxDigitCount;
 static volatile bool gRxInvalid;
+static volatile uint16_t gTargetRpm;
+static volatile uint8_t gMotorPwmPercent;
 static volatile int32_t gEncoderCount;
 static volatile int32_t gSpeedCountsPer10ms;
 static volatile int32_t gSpeedReportCountAccumulator;
 static volatile int32_t gSpeedCountsPer100ms;
 static volatile uint8_t gSpeedReportDivider;
 static volatile bool gSpeedReportReady;
+static float gPidOutput;
+static float gPidLastError;
+static float gPidPreviousError;
 
 static void UART_sendString(const char *text)
 {
@@ -90,7 +101,8 @@ static void UART_sendInt32(int32_t value)
     }
 }
 
-static void UART_reportSpeed(int32_t speedCountsPer100ms)
+static void UART_reportStatus(int32_t speedCountsPer100ms,
+    uint16_t targetRpm, uint8_t pwmPercent)
 {
     int32_t rpmTimes10Numerator = speedCountsPer100ms * 6000;
     int32_t rpmTimes10;
@@ -107,7 +119,9 @@ static void UART_reportSpeed(int32_t speedCountsPer100ms)
     rpmTimes10 = rpmTimes10Numerator /
                  (int32_t) ENCODER_COUNTS_PER_OUTPUT_REVOLUTION;
 
-    UART_sendString("speed_rpm=");
+    UART_sendString("target_rpm=");
+    UART_sendInt32((int32_t) targetRpm);
+    UART_sendString(",speed_rpm=");
     if (rpmTimes10 < 0) {
         DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) '-');
         rpmMagnitude = (uint32_t) (-rpmTimes10);
@@ -120,6 +134,8 @@ static void UART_reportSpeed(int32_t speedCountsPer100ms)
         UART_0_INST, (uint8_t) ('0' + (rpmMagnitude % 10U)));
     UART_sendString(",counts_100ms=");
     UART_sendInt32(speedCountsPer100ms);
+    UART_sendString(",pwm_percent=");
+    UART_sendInt32((int32_t) pwmPercent);
     UART_sendString("\r\n");
 }
 
@@ -156,6 +172,55 @@ static void Motor_setSpeedPercent(uint8_t speedPercent)
         PWM_MOTOR_A_INST, compareValue, DL_TIMER_CC_0_INDEX);
 }
 
+static void PID_reset(void)
+{
+    gPidOutput = 0.0f;
+    gPidLastError = 0.0f;
+    gPidPreviousError = 0.0f;
+}
+
+static uint8_t PID_update(
+    int32_t measuredCountsPer10ms, uint16_t targetRpm)
+{
+    float targetCountsPer10ms;
+    float measuredCounts;
+    float error;
+    float increment;
+
+    if (targetRpm == 0U) {
+        PID_reset();
+        return 0U;
+    }
+
+    targetCountsPer10ms =
+        ((float) targetRpm *
+            (float) ENCODER_COUNTS_PER_OUTPUT_REVOLUTION) /
+        (60.0f * (float) PID_SAMPLE_RATE_HZ);
+
+    measuredCounts = (measuredCountsPer10ms < 0) ?
+        (float) (-measuredCountsPer10ms) :
+        (float) measuredCountsPer10ms;
+    error = targetCountsPer10ms - measuredCounts;
+
+    increment =
+        PID_KP * (error - gPidLastError) +
+        PID_KI * error +
+        PID_KD *
+            (error + gPidPreviousError - (2.0f * gPidLastError));
+    gPidOutput += increment;
+
+    if (gPidOutput > PID_OUTPUT_MAX_PERCENT) {
+        gPidOutput = PID_OUTPUT_MAX_PERCENT;
+    } else if (gPidOutput < 0.0f) {
+        gPidOutput = 0.0f;
+    }
+
+    gPidPreviousError = gPidLastError;
+    gPidLastError = error;
+
+    return (uint8_t) (gPidOutput + 0.5f);
+}
+
 int main(void)
 {
     SYSCFG_DL_init();
@@ -166,8 +231,8 @@ int main(void)
      *   PB6  -> AIN1
      *   PB7  -> AIN2
      *
-     * UART ASCII "0".."100" + CR/LF sets duty percent.
-     * Speed 0 short-brakes; speed > 0 runs forward.
+     * UART ASCII "0".."1000" + CR/LF sets target output-shaft RPM.
+     * Target 0 short-brakes; target > 0 runs closed-loop forward.
      */
     Motor_setSpeedPercent(MOTOR_INITIAL_SPEED_PERCENT);
     DL_TimerG_startCounter(PWM_MOTOR_A_INST);
@@ -184,8 +249,10 @@ int main(void)
     while (1) {
         if (gSpeedReportReady) {
             int32_t speed = gSpeedCountsPer100ms;
+            uint16_t targetRpm = gTargetRpm;
+            uint8_t pwmPercent = gMotorPwmPercent;
             gSpeedReportReady = false;
-            UART_reportSpeed(speed);
+            UART_reportStatus(speed, targetRpm, pwmPercent);
         }
         __WFI();
     }
@@ -219,6 +286,9 @@ void TIMER_PID_INST_IRQHandler(void)
         case DL_TIMER_IIDX_ZERO:
             gSpeedCountsPer10ms = gEncoderCount;
             gEncoderCount = 0;
+            gMotorPwmPercent =
+                PID_update(gSpeedCountsPer10ms, gTargetRpm);
+            Motor_setSpeedPercent(gMotorPwmPercent);
             gSpeedReportCountAccumulator += gSpeedCountsPer10ms;
 
             gSpeedReportDivider++;
@@ -247,7 +317,8 @@ void UART_0_INST_IRQHandler(void)
                     (gRxValue * 10U) + (uint16_t) (rxData - (uint8_t) '0');
 
                 gRxDigitCount++;
-                if ((gRxDigitCount > 3U) || (newValue > 100U)) {
+                if ((gRxDigitCount > 4U) ||
+                    (newValue > MOTOR_MAX_TARGET_RPM)) {
                     gRxInvalid = true;
                 } else {
                     gRxValue = newValue;
@@ -255,7 +326,7 @@ void UART_0_INST_IRQHandler(void)
             } else if ((rxData == (uint8_t) '\r') ||
                        (rxData == (uint8_t) '\n')) {
                 if ((gRxDigitCount > 0U) && !gRxInvalid) {
-                    Motor_setSpeedPercent((uint8_t) gRxValue);
+                    gTargetRpm = gRxValue;
                 }
 
                 gRxValue      = 0U;
