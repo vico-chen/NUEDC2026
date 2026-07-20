@@ -1,3 +1,4 @@
+"./angle_turn_control.o"
 "./car_control.o"
 "./main.o"
 "./ti_msp_dl_config.o"

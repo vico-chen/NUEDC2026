@@ -9,6 +9,7 @@ SYSCFG_SRCS += \
 ../main.syscfg 
 
 C_SRCS += \
+../angle_turn_control.c \
 ../car_control.c \
 ../main.c \
 ./ti_msp_dl_config.c \
@@ -25,6 +26,7 @@ GEN_FILES += \
 ./ti_msp_dl_config.c 
 
 C_DEPS += \
+./angle_turn_control.d \
 ./car_control.d \
 ./main.d \
 ./ti_msp_dl_config.d \
@@ -36,6 +38,7 @@ GEN_OPTS += \
 ./device.opt 
 
 OBJS += \
+./angle_turn_control.o \
 ./car_control.o \
 ./main.o \
 ./ti_msp_dl_config.o \
@@ -49,6 +52,7 @@ GEN_MISC_FILES += \
 ./Event.dot 
 
 OBJS__QUOTED += \
+"angle_turn_control.o" \
 "car_control.o" \
 "main.o" \
 "ti_msp_dl_config.o" \
@@ -62,6 +66,7 @@ GEN_MISC_FILES__QUOTED += \
 "Event.dot" 
 
 C_DEPS__QUOTED += \
+"angle_turn_control.d" \
 "car_control.d" \
 "main.d" \
 "ti_msp_dl_config.d" \
@@ -75,6 +80,7 @@ GEN_FILES__QUOTED += \
 "ti_msp_dl_config.c" 
 
 C_SRCS__QUOTED += \
+"../angle_turn_control.c" \
 "../car_control.c" \
 "../main.c" \
 "./ti_msp_dl_config.c" \

@@ -34,6 +34,7 @@
 #include "motor_control.h"
 #include "car_control.h"
 #include "mpu6050_angle.h"
+#include "angle_turn_control.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,6 +44,8 @@
 #define CAR_DEFAULT_SPEED_RPM (200)
 #define CAR_DEFAULT_TURN_INNER_PERCENT (50U)
 #define ENABLE_MOTOR_STATUS_UART (0)
+#define ANGLE_TURN_DEFAULT_MAX_RPM (180)
+#define ANGLE_TURN_LEFT_YAW_SIGN (1)
 
 /*
  * Wheel layout:
@@ -179,6 +182,26 @@ static const CarControl_Config gCarConfig = {
     .defaultTurnInnerPercent = CAR_DEFAULT_TURN_INNER_PERCENT,
 };
 
+static AngleTurnControl gAngleTurn;
+static const AngleTurnControl_Config gAngleTurnConfig = {
+    .car = &gCar,
+    /*
+     * With the module horizontal and +Z upward, left/CCW yaw is positive.
+     * Change to -1 if a manual left turn makes the reported Y angle decrease.
+     */
+    .leftTurnYawSign = ANGLE_TURN_LEFT_YAW_SIGN,
+    .kpRpmPerDegree = 3.0f,
+    .kdRpmPerDps = 0.8f,
+    .minimumRpm = 40,
+    .defaultMaximumRpm = ANGLE_TURN_DEFAULT_MAX_RPM,
+    .angleToleranceDegrees = 0.5f,
+    .holdReleaseDegrees = 1.8f,
+    .minRpmEngageDegrees = 3.0f,
+    .stoppedRateToleranceDps = 4.0f,
+    .settleSamples = 15U,
+    .timeoutSamples = 1500U,
+};
+
 static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
@@ -312,6 +335,70 @@ static bool Car_parseUnsignedValue(
     return true;
 }
 
+static bool Car_parseAngleTurnParameters(
+    uint8_t startIndex, float *angleDegrees, int16_t *maximumRpm)
+{
+    uint8_t index = startIndex;
+    uint16_t wholeDegrees;
+    uint16_t fractionalTenths = 0U;
+    uint16_t rpm;
+    uint16_t angleTenths;
+
+    while ((gUartCommand[index] == ' ') ||
+           (gUartCommand[index] == '\t')) {
+        index++;
+    }
+    if (!Car_parseUnsignedValue(&index, 360U, &wholeDegrees)) {
+        return false;
+    }
+
+    if (gUartCommand[index] == '.') {
+        index++;
+        if ((gUartCommand[index] < '0') ||
+            (gUartCommand[index] > '9')) {
+            return false;
+        }
+        fractionalTenths =
+            (uint16_t) (gUartCommand[index] - '0');
+        index++;
+    }
+    if ((gUartCommand[index] != '\0') &&
+        (gUartCommand[index] != ' ') &&
+        (gUartCommand[index] != '\t')) {
+        return false;
+    }
+
+    angleTenths =
+        (uint16_t) (wholeDegrees * 10U + fractionalTenths);
+    if ((angleTenths == 0U) || (angleTenths > 3600U)) {
+        return false;
+    }
+
+    while ((gUartCommand[index] == ' ') ||
+           (gUartCommand[index] == '\t')) {
+        index++;
+    }
+    *maximumRpm = ANGLE_TURN_DEFAULT_MAX_RPM;
+    if (gUartCommand[index] != '\0') {
+        if (!Car_parseUnsignedValue(
+                &index, MOTOR_MAX_TARGET_RPM, &rpm) ||
+            (rpm == 0U)) {
+            return false;
+        }
+        *maximumRpm = (int16_t) rpm;
+        while ((gUartCommand[index] == ' ') ||
+               (gUartCommand[index] == '\t')) {
+            index++;
+        }
+    }
+
+    if (gUartCommand[index] != '\0') {
+        return false;
+    }
+    *angleDegrees = (float) angleTenths / 10.0f;
+    return true;
+}
+
 static bool Car_parseCommandParameters(uint8_t startIndex,
     int16_t *speedRpm, bool *speedSpecified,
     uint8_t *turnInnerPercent, bool *turnSpecified)
@@ -367,6 +454,8 @@ static void Car_processUartCommand(void)
     char turnCommand = '\0';
     CarControl_Motion motion;
     int16_t speedRpm;
+    int16_t angleTurnMaximumRpm;
+    float angleTurnDegrees;
     uint8_t turnInnerPercent;
     bool speedSpecified;
     bool turnSpecified;
@@ -381,7 +470,7 @@ static void Car_processUartCommand(void)
     }
     index++;
 
-    if ((command == 'F') || (command == 'B')) {
+    if ((command == 'F') || (command == 'B') || (command == 'T')) {
         turnCommand = gUartCommand[index];
         if ((turnCommand >= 'a') && (turnCommand <= 'z')) {
             turnCommand = (char) (turnCommand - ('a' - 'A'));
@@ -394,7 +483,27 @@ static void Car_processUartCommand(void)
     }
 
     if (command == 'X') {
+        AngleTurnControl_cancel(&gAngleTurn);
         CarControl_stop(&gCar);
+        UART_sendString("STOPPED\r\n");
+        return;
+    }
+    if (command == 'T') {
+        if ((turnCommand == '\0') ||
+            !Car_parseAngleTurnParameters(
+                index, &angleTurnDegrees, &angleTurnMaximumRpm)) {
+            UART_sendString("ANGLE_TURN_FORMAT_ERROR\r\n");
+            return;
+        }
+        if (!gMpu6050Ready) {
+            UART_sendString("MPU6050_ERROR\r\n");
+            return;
+        }
+        if (AngleTurnControl_start(&gAngleTurn,
+                turnCommand == 'L', angleTurnDegrees,
+                angleTurnMaximumRpm)) {
+            UART_sendString("ANGLE_TURN_STARTED\r\n");
+        }
         return;
     }
     if (command == 'Y') {
@@ -403,6 +512,10 @@ static void Car_processUartCommand(void)
             index++;
         }
         if (gUartCommand[index] == '0') {
+            if (AngleTurnControl_isActive(&gAngleTurn)) {
+                UART_sendString("ANGLE_TURN_BUSY\r\n");
+                return;
+            }
             index++;
             while ((gUartCommand[index] == ' ') ||
                    (gUartCommand[index] == '\t')) {
@@ -460,6 +573,7 @@ static void Car_processUartCommand(void)
             return;
     }
 
+    AngleTurnControl_cancel(&gAngleTurn);
     CarControl_setMotion(&gCar, motion, speedRpm, turnInnerPercent);
 }
 
@@ -478,6 +592,7 @@ int main(void)
     MotorControl_init(&gMotorC, &gMotorCConfig);
     MotorControl_init(&gMotorD, &gMotorDConfig);
     CarControl_init(&gCar, &gCarConfig);
+    AngleTurnControl_init(&gAngleTurn, &gAngleTurnConfig);
 
     UART_sendString(
         "\r\nMPU6050: keep car still for 5 seconds (calibrating)...\r\n");
@@ -503,10 +618,27 @@ int main(void)
 
     while (1) {
         if (gMpu6050SampleDue) {
+            AngleTurnControl_Result angleTurnResult =
+                ANGLE_TURN_RESULT_NONE;
+
             gMpu6050SampleDue = false;
-            if (gMpu6050Ready && !MPU6050_Angle_update()) {
-                gMpu6050Ready = false;
-                UART_sendString("MPU6050 read failed.\r\n");
+            if (gMpu6050Ready) {
+                if (MPU6050_Angle_update()) {
+                    angleTurnResult =
+                        AngleTurnControl_update(&gAngleTurn);
+                } else {
+                    AngleTurnControl_cancel(&gAngleTurn);
+                    gMpu6050Ready = false;
+                    UART_sendString("MPU6050 read failed.\r\n");
+                }
+            }
+
+            if (angleTurnResult == ANGLE_TURN_RESULT_COMPLETED) {
+                UART_sendString("ANGLE_TURN_DONE ");
+                UART_reportZAngle();
+            } else if (angleTurnResult == ANGLE_TURN_RESULT_TIMEOUT) {
+                UART_sendString("ANGLE_TURN_TIMEOUT ");
+                UART_reportZAngle();
             }
         }
 
