@@ -138,6 +138,19 @@ extern "C" {
 #define GPIO_I2C_MPU6050_IOMUX_SCL                                (IOMUX_PINCM6)
 #define GPIO_I2C_MPU6050_IOMUX_SCL_FUNC                 IOMUX_PINCM6_PF_I2C0_SCL
 
+/* Defines for I2C_OLED */
+#define I2C_OLED_INST                                                       I2C1
+#define I2C_OLED_INST_IRQHandler                                 I2C1_IRQHandler
+#define I2C_OLED_INST_INT_IRQN                                     I2C1_INT_IRQn
+#define GPIO_I2C_OLED_SDA_PORT                                             GPIOA
+#define GPIO_I2C_OLED_SDA_PIN                                     DL_GPIO_PIN_16
+#define GPIO_I2C_OLED_IOMUX_SDA                                  (IOMUX_PINCM38)
+#define GPIO_I2C_OLED_IOMUX_SDA_FUNC                   IOMUX_PINCM38_PF_I2C1_SDA
+#define GPIO_I2C_OLED_SCL_PORT                                             GPIOA
+#define GPIO_I2C_OLED_SCL_PIN                                     DL_GPIO_PIN_15
+#define GPIO_I2C_OLED_IOMUX_SCL                                  (IOMUX_PINCM37)
+#define GPIO_I2C_OLED_IOMUX_SCL_FUNC                   IOMUX_PINCM37_PF_I2C1_SCL
+
 
 /* Defines for UART_0 */
 #define UART_0_INST                                                        UART0
@@ -250,6 +263,22 @@ extern "C" {
 #define GPIO_MOTOR_D_EB_4_IIDX                              (DL_GPIO_IIDX_DIO17)
 #define GPIO_MOTOR_D_EB_4_PIN                                   (DL_GPIO_PIN_17)
 #define GPIO_MOTOR_D_EB_4_IOMUX                                  (IOMUX_PINCM39)
+/* Defines for AD0: GPIOB.11 with pinCMx 28 on package pin 63 */
+#define GPIO_GRAYSCALE_AD0_PORT                                          (GPIOB)
+#define GPIO_GRAYSCALE_AD0_PIN                                  (DL_GPIO_PIN_11)
+#define GPIO_GRAYSCALE_AD0_IOMUX                                 (IOMUX_PINCM28)
+/* Defines for AD1: GPIOB.5 with pinCMx 18 on package pin 53 */
+#define GPIO_GRAYSCALE_AD1_PORT                                          (GPIOB)
+#define GPIO_GRAYSCALE_AD1_PIN                                   (DL_GPIO_PIN_5)
+#define GPIO_GRAYSCALE_AD1_IOMUX                                 (IOMUX_PINCM18)
+/* Defines for AD2: GPIOA.1 with pinCMx 2 on package pin 34 */
+#define GPIO_GRAYSCALE_AD2_PORT                                          (GPIOA)
+#define GPIO_GRAYSCALE_AD2_PIN                                   (DL_GPIO_PIN_1)
+#define GPIO_GRAYSCALE_AD2_IOMUX                                  (IOMUX_PINCM2)
+/* Defines for OUT: GPIOA.14 with pinCMx 36 on package pin 7 */
+#define GPIO_GRAYSCALE_OUT_PORT                                          (GPIOA)
+#define GPIO_GRAYSCALE_OUT_PIN                                  (DL_GPIO_PIN_14)
+#define GPIO_GRAYSCALE_OUT_IOMUX                                 (IOMUX_PINCM36)
 
 
 /* clang-format on */
@@ -262,6 +291,7 @@ void SYSCFG_DL_PWM_MOTOR_AB_init(void);
 void SYSCFG_DL_PWM_MOTOR_CD_init(void);
 void SYSCFG_DL_TIMER_PID_init(void);
 void SYSCFG_DL_I2C_MPU6050_init(void);
+void SYSCFG_DL_I2C_OLED_init(void);
 void SYSCFG_DL_UART_0_init(void);
 void SYSCFG_DL_UART_1_init(void);
 

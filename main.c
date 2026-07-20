@@ -35,6 +35,7 @@
 #include "car_control.h"
 #include "mpu6050_angle.h"
 #include "angle_turn_control.h"
+#include "grayscale_sensor.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,9 +44,9 @@
 #define UART_COMMAND_BUFFER_SIZE (32U)
 #define CAR_DEFAULT_SPEED_RPM (200)
 #define CAR_DEFAULT_TURN_INNER_PERCENT (50U)
-#define ENABLE_MOTOR_STATUS_UART (0)
 #define ANGLE_TURN_DEFAULT_MAX_RPM (100)
 #define ANGLE_TURN_LEFT_YAW_SIGN (1)
+#define GRAYSCALE_STREAM_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
 
 /*
  * Wheel layout:
@@ -206,6 +207,10 @@ static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
 static volatile bool gMpu6050SampleDue;
 static bool gMpu6050Ready;
+static bool gGrayscaleStreamEnabled;
+static uint8_t gGrayscaleStreamDivider;
+static bool gMotorStatusStreamEnabled;
+static bool gMotorStatusReportOnce;
 
 static void UART_sendString(const char *text)
 {
@@ -251,7 +256,6 @@ static void UART_sendHex8(uint8_t value)
         UART_0_INST, (uint8_t) hexDigits[value & 0x0FU]);
 }
 
-#if ENABLE_MOTOR_STATUS_UART
 static void UART_reportMotorStatus(
     char motorName, const MotorControl_Status *status)
 {
@@ -278,8 +282,58 @@ static void UART_reportMotorStatus(
     UART_sendInt32((int32_t) status->pwmPercent);
     UART_sendString("]");
 }
-#endif
 
+static void UART_serviceMotorStatus(void)
+{
+    static MotorControl_Status motorAStatus;
+    static MotorControl_Status motorBStatus;
+    static MotorControl_Status motorCStatus;
+    static MotorControl_Status motorDStatus;
+    static bool motorAStatusReady;
+    static bool motorBStatusReady;
+    static bool motorCStatusReady;
+    static bool motorDStatusReady;
+
+    if (!gMotorStatusStreamEnabled && !gMotorStatusReportOnce) {
+        motorAStatusReady = false;
+        motorBStatusReady = false;
+        motorCStatusReady = false;
+        motorDStatusReady = false;
+        return;
+    }
+
+    if (MotorControl_takeStatus(&gMotorA, &motorAStatus)) {
+        motorAStatusReady = true;
+    }
+    if (MotorControl_takeStatus(&gMotorB, &motorBStatus)) {
+        motorBStatusReady = true;
+    }
+    if (MotorControl_takeStatus(&gMotorC, &motorCStatus)) {
+        motorCStatusReady = true;
+    }
+    if (MotorControl_takeStatus(&gMotorD, &motorDStatus)) {
+        motorDStatusReady = true;
+    }
+
+    if (motorAStatusReady && motorBStatusReady && motorCStatusReady &&
+        motorDStatusReady) {
+        UART_reportMotorStatus('A', &motorAStatus);
+        UART_sendString(",");
+        UART_reportMotorStatus('B', &motorBStatus);
+        UART_sendString(",");
+        UART_reportMotorStatus('C', &motorCStatus);
+        UART_sendString(",");
+        UART_reportMotorStatus('D', &motorDStatus);
+        UART_sendString("\r\n");
+        motorAStatusReady = false;
+        motorBStatusReady = false;
+        motorCStatusReady = false;
+        motorDStatusReady = false;
+        if (gMotorStatusReportOnce) {
+            gMotorStatusReportOnce = false;
+        }
+    }
+}
 static void UART_reportZAngle(void)
 {
     float angle = MPU6050_Angle_getZDegrees();
@@ -308,6 +362,22 @@ static void UART_reportZAngle(void)
     UART_sendString(" deg\r\n");
 }
 
+static void UART_reportGrayscale(void)
+{
+    uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
+    uint8_t i;
+
+    Grayscale_Sensor_ReadAll(values);
+    UART_sendString("GRAY");
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        UART_sendString(" X");
+        UART_sendInt32((int32_t) (i + 1U));
+        DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) ':');
+        UART_sendInt32((int32_t) values[i]);
+    }
+    UART_sendString("\r\n");
+}
+
 static bool Car_parseUnsignedValue(
     uint8_t *index, uint16_t maximum, uint16_t *value)
 {
@@ -332,6 +402,92 @@ static bool Car_parseUnsignedValue(
     }
     *value = parsedValue;
     return true;
+}
+
+/*
+ * Parse optional signed RPM after a motor letter.
+ * Empty => 0. Accepts forms like "200", "-150", "+80".
+ */
+static bool Car_parseOptionalSignedRpm(
+    uint8_t startIndex, int16_t *rpm)
+{
+    uint8_t index = startIndex;
+    bool negative = false;
+    uint16_t magnitude;
+
+    while ((gUartCommand[index] == ' ') ||
+           (gUartCommand[index] == '\t')) {
+        index++;
+    }
+    if (gUartCommand[index] == '\0') {
+        *rpm = 0;
+        return true;
+    }
+
+    if (gUartCommand[index] == '-') {
+        negative = true;
+        index++;
+    } else if (gUartCommand[index] == '+') {
+        index++;
+    }
+
+    if (!Car_parseUnsignedValue(
+            &index, MOTOR_MAX_TARGET_RPM, &magnitude)) {
+        return false;
+    }
+
+    while ((gUartCommand[index] == ' ') ||
+           (gUartCommand[index] == '\t')) {
+        index++;
+    }
+    if (gUartCommand[index] != '\0') {
+        return false;
+    }
+
+    *rpm = negative ? (int16_t) (-(int16_t) magnitude)
+                    : (int16_t) magnitude;
+    return true;
+}
+
+static void Car_setSingleMotorChassisRpm(
+    char motorName, int16_t chassisRpm)
+{
+    MotorControl *motor;
+    int8_t forwardSign;
+    int16_t motorRpm;
+
+    switch (motorName) {
+        case 'A':
+            motor = &gMotorA;
+            forwardSign = MOTOR_A_FORWARD_SIGN;
+            break;
+        case 'B':
+            motor = &gMotorB;
+            forwardSign = MOTOR_B_FORWARD_SIGN;
+            break;
+        case 'C':
+            motor = &gMotorC;
+            forwardSign = MOTOR_C_FORWARD_SIGN;
+            break;
+        case 'D':
+            motor = &gMotorD;
+            forwardSign = MOTOR_D_FORWARD_SIGN;
+            break;
+        default:
+            return;
+    }
+
+    AngleTurnControl_cancel(&gAngleTurn);
+    motorRpm = (int16_t) (chassisRpm * forwardSign);
+    MotorControl_setTargetRpm(motor, motorRpm);
+
+    UART_sendString("MOTOR_");
+    DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) motorName);
+    UART_sendString(" chassis_rpm=");
+    UART_sendInt32((int32_t) chassisRpm);
+    UART_sendString(" motor_rpm=");
+    UART_sendInt32((int32_t) motorRpm);
+    UART_sendString("\r\n");
 }
 
 static bool Car_parseAngleTurnParameters(
@@ -531,6 +687,89 @@ static void Car_processUartCommand(void)
         }
         return;
     }
+    if (command == 'G') {
+        while ((gUartCommand[index] == ' ') ||
+               (gUartCommand[index] == '\t')) {
+            index++;
+        }
+        if (gUartCommand[index] == '1') {
+            index++;
+            while ((gUartCommand[index] == ' ') ||
+                   (gUartCommand[index] == '\t')) {
+                index++;
+            }
+            if (gUartCommand[index] == '\0') {
+                gGrayscaleStreamEnabled = true;
+                gGrayscaleStreamDivider = 0U;
+                UART_sendString("GRAY_STREAM_ON\r\n");
+            }
+            return;
+        }
+        if (gUartCommand[index] == '0') {
+            index++;
+            while ((gUartCommand[index] == ' ') ||
+                   (gUartCommand[index] == '\t')) {
+                index++;
+            }
+            if (gUartCommand[index] == '\0') {
+                gGrayscaleStreamEnabled = false;
+                UART_sendString("GRAY_STREAM_OFF\r\n");
+            }
+            return;
+        }
+        if (gUartCommand[index] == '\0') {
+            UART_reportGrayscale();
+        }
+        return;
+    }
+    if (command == 'M') {
+        while ((gUartCommand[index] == ' ') ||
+               (gUartCommand[index] == '\t')) {
+            index++;
+        }
+        if (gUartCommand[index] == '1') {
+            index++;
+            while ((gUartCommand[index] == ' ') ||
+                   (gUartCommand[index] == '\t')) {
+                index++;
+            }
+            if (gUartCommand[index] == '\0') {
+                gMotorStatusStreamEnabled = true;
+                gMotorStatusReportOnce = false;
+                UART_sendString("MOTOR_STATUS_STREAM_ON\r\n");
+            }
+            return;
+        }
+        if (gUartCommand[index] == '0') {
+            index++;
+            while ((gUartCommand[index] == ' ') ||
+                   (gUartCommand[index] == '\t')) {
+                index++;
+            }
+            if (gUartCommand[index] == '\0') {
+                gMotorStatusStreamEnabled = false;
+                gMotorStatusReportOnce = false;
+                UART_sendString("MOTOR_STATUS_STREAM_OFF\r\n");
+            }
+            return;
+        }
+        if (gUartCommand[index] == '\0') {
+            gMotorStatusReportOnce = true;
+            UART_sendString("MOTOR_STATUS_WAIT\r\n");
+        }
+        return;
+    }
+    if ((command == 'A') || (command == 'B') ||
+        (command == 'C') || (command == 'D')) {
+        int16_t singleMotorRpm;
+
+        if (!Car_parseOptionalSignedRpm(index, &singleMotorRpm)) {
+            UART_sendString("MOTOR_FORMAT_ERROR\r\n");
+            return;
+        }
+        Car_setSingleMotorChassisRpm(command, singleMotorRpm);
+        return;
+    }
     if ((command != 'F') && (command != 'B') &&
         (command != 'L') && (command != 'R')) {
         return;
@@ -592,6 +831,7 @@ int main(void)
     MotorControl_init(&gMotorD, &gMotorDConfig);
     CarControl_init(&gCar, &gCarConfig);
     AngleTurnControl_init(&gAngleTurn, &gAngleTurnConfig);
+    Grayscale_Sensor_Init();
 
     UART_sendString(
         "\r\nMPU6050: keep car still for 5 seconds (calibrating)...\r\n");
@@ -603,6 +843,9 @@ int main(void)
     } else {
         UART_sendString("MPU6050 init failed.\r\n");
     }
+    UART_sendString(
+        "GRAYSCALE: AD0=PB11 AD1=PB5 AD2=PA1 OUT=PA14; G/G1/G0\r\n");
+    UART_sendString("MOTOR_STATUS: M once, M1 stream, M0 stop\r\n");
 
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);
@@ -642,6 +885,15 @@ int main(void)
                 UART_sendString(
                     "ANGLE_TURN_FAULT check ANGLE_TURN_LEFT_YAW_SIGN\r\n");
             }
+
+            if (gGrayscaleStreamEnabled) {
+                gGrayscaleStreamDivider++;
+                if (gGrayscaleStreamDivider >=
+                    GRAYSCALE_STREAM_PERIOD_SAMPLES) {
+                    gGrayscaleStreamDivider = 0U;
+                    UART_reportGrayscale();
+                }
+            }
         }
 
         if (gUartCommandReady) {
@@ -649,47 +901,7 @@ int main(void)
             gUartCommandReady = false;
         }
 
-        /* Motor status UART output temporarily disabled. */
-#if ENABLE_MOTOR_STATUS_UART
-        {
-            static MotorControl_Status motorAStatus;
-            static MotorControl_Status motorBStatus;
-            static MotorControl_Status motorCStatus;
-            static MotorControl_Status motorDStatus;
-            static bool motorAStatusReady;
-            static bool motorBStatusReady;
-            static bool motorCStatusReady;
-            static bool motorDStatusReady;
-
-            if (MotorControl_takeStatus(&gMotorA, &motorAStatus)) {
-                motorAStatusReady = true;
-            }
-            if (MotorControl_takeStatus(&gMotorB, &motorBStatus)) {
-                motorBStatusReady = true;
-            }
-            if (MotorControl_takeStatus(&gMotorC, &motorCStatus)) {
-                motorCStatusReady = true;
-            }
-            if (MotorControl_takeStatus(&gMotorD, &motorDStatus)) {
-                motorDStatusReady = true;
-            }
-            if (motorAStatusReady && motorBStatusReady &&
-                motorCStatusReady && motorDStatusReady) {
-                UART_reportMotorStatus('A', &motorAStatus);
-                UART_sendString(",");
-                UART_reportMotorStatus('B', &motorBStatus);
-                UART_sendString(",");
-                UART_reportMotorStatus('C', &motorCStatus);
-                UART_sendString(",");
-                UART_reportMotorStatus('D', &motorDStatus);
-                UART_sendString("\r\n");
-                motorAStatusReady = false;
-                motorBStatusReady = false;
-                motorCStatusReady = false;
-                motorDStatusReady = false;
-            }
-        }
-#endif
+        UART_serviceMotorStatus();
         __WFI();
     }
 }

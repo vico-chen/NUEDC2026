@@ -1,5 +1,6 @@
 "./angle_turn_control.o"
 "./car_control.o"
+"./grayscale_sensor.o"
 "./main.o"
 "./ti_msp_dl_config.o"
 "./startup_mspm0g350x_ticlang.o"
