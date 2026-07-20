@@ -190,9 +190,15 @@ AngleTurnControl_Result AngleTurnControl_update(AngleTurnControl *control)
     }
 
     if (control->creeping) {
+        float creepStopDistance = control->config.angleToleranceDegrees +
+            (0.04f * AngleTurnControl_getApproachRateDps(control));
+
         AngleTurnControl_commandPivot(control, control->config.creepRpm);
-        if (remaining <=
-            AngleTurnControl_getCoastDistanceDegrees(control)) {
+        /*
+         * During creep, do not reuse the large cruise coast distance; that
+         * left a repeatable ~2 deg shortfall. Stop only when nearly there.
+         */
+        if (remaining <= creepStopDistance) {
             AngleTurnControl_enterCoast(control);
         }
         return ANGLE_TURN_RESULT_NONE;

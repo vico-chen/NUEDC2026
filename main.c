@@ -191,13 +191,13 @@ static const AngleTurnControl_Config gAngleTurnConfig = {
      */
     .leftTurnYawSign = ANGLE_TURN_LEFT_YAW_SIGN,
     .defaultCruiseRpm = ANGLE_TURN_DEFAULT_MAX_RPM,
-    .creepRpm = 45,
-    .brakeRateGain = 0.12f,
-    .brakeAheadMaxDegrees = 14.0f,
-    .angleToleranceDegrees = 2.0f,
-    .stoppedRateToleranceDps = 8.0f,
-    /* Brief coast after entering the tolerance window. */
-    .settleSamples = 20U,
+    .creepRpm = 40,
+    .brakeRateGain = 0.10f,
+    .brakeAheadMaxDegrees = 12.0f,
+    /* Was 2.0 deg and caused a repeatable ~88 deg result on 90 deg commands. */
+    .angleToleranceDegrees = 0.6f,
+    .stoppedRateToleranceDps = 6.0f,
+    .settleSamples = 15U,
     .timeoutSamples = 1500U,
 };
 
