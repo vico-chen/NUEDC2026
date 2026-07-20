@@ -48,6 +48,16 @@
 #define ANGLE_TURN_LEFT_YAW_SIGN (1)
 #define GRAYSCALE_STREAM_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
 
+/* Line tracking config (8-ch digital grayscale, black line => output 1). */
+#define LINE_TRACKING_ACTIVE_LEVEL (1U)
+#define LINE_PID_KP (4.0f)
+#define LINE_PID_KI (0.01f)
+#define LINE_PID_KD (0.0f)
+#define LINE_PID_INTEGRAL_LIMIT (2000.0f)
+#define LINE_PID_DEADBAND_RPM_OFFSET (3) /* within this => straight */
+#define LINE_ERR_ABS_FALLBACK (30) /* when no sensor active */
+#define LINE_DEBUG_PRINT_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
+
 /*
  * Wheel layout:
  *   C left-front, B right-front
@@ -209,6 +219,14 @@ static volatile bool gMpu6050SampleDue;
 static bool gMpu6050Ready;
 static bool gGrayscaleStreamEnabled;
 static uint8_t gGrayscaleStreamDivider;
+
+static bool gLineTrackingEnabled;
+static bool gLineTrackingDebugEnabled;
+static int16_t gLineTrackingBaseSpeedRpm;
+static float gLineTrackingIntegral;
+static int16_t gLineTrackingLastErr;
+static uint8_t gLineTrackingDebugDivider;
+
 static bool gMotorStatusStreamEnabled;
 static bool gMotorStatusReportOnce;
 
@@ -281,6 +299,11 @@ static void UART_printHelp(void)
     UART_sendString("  wheels: C-B front, D-A rear\r\n");
     UART_sendString("  A 200 / A -150 / A(=0 stop)\r\n");
     UART_sendString("\r\n");
+    UART_sendString("[Line]    I [speed] | I0 stop | I1 debug\r\n");
+    UART_sendString("  I 200     start line tracking (black line => X=1)\r\n");
+    UART_sendString("  I0        stop\r\n");
+    UART_sendString("  I1        start with debug prints\r\n");
+    UART_sendString("\r\n");
     UART_sendString("[Status]\r\n");
     UART_sendString("  Y / Y0      yaw read / reset\r\n");
     UART_sendString("  G / G1 / G0 grayscale once/stream/off\r\n");
@@ -301,6 +324,7 @@ static void UART_printBanner(void)
     UART_sendString("  TL 90   turn left 90 deg\r\n");
     UART_sendString("  G       read grayscale\r\n");
     UART_sendString("  Y       read yaw angle\r\n");
+    UART_sendString("  I 200   line tracking | I0 stop\r\n");
     UART_sendString(">>> Send H or ? for full command list\r\n");
 }
 
@@ -429,6 +453,167 @@ static void UART_reportGrayscale(void)
         UART_sendInt32((int32_t) values[i]);
     }
     UART_sendString("\r\n");
+}
+
+static void LineTracking_resetPid(void)
+{
+    gLineTrackingIntegral = 0.0f;
+    gLineTrackingLastErr = 0;
+    gLineTrackingDebugDivider = 0U;
+}
+
+static int16_t LineTracking_computeErr(
+    const uint8_t values[GRAYSCALE_SENSOR_CHANNELS])
+{
+    /* Weights for X1..X8: left negative, right positive. */
+    static const int16_t weights[GRAYSCALE_SENSOR_CHANNELS] = {
+        -30, -20, -15, -5, 5, 15, 20, 30
+    };
+
+    int32_t weightedSum = 0;
+    uint8_t activeCount = 0U;
+    uint8_t i;
+
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
+            weightedSum += (int32_t) weights[i];
+            activeCount++;
+        }
+    }
+
+    if (activeCount > 0U) {
+        return (int16_t) (weightedSum / (int32_t) activeCount);
+    }
+
+    /* Lost line: keep turning toward last known direction. */
+    if (gLineTrackingLastErr > 0) {
+        return LINE_ERR_ABS_FALLBACK;
+    }
+    if (gLineTrackingLastErr < 0) {
+        return (int16_t) (-LINE_ERR_ABS_FALLBACK);
+    }
+    return 0;
+}
+
+static void LineTracking_applyMotion(int16_t pidRpmOffset)
+{
+    int16_t speedRpm = gLineTrackingBaseSpeedRpm;
+    int16_t pidAbs = (pidRpmOffset < 0) ? (int16_t) (-pidRpmOffset)
+                                         : pidRpmOffset;
+    int16_t innerRpm;
+    uint8_t innerPercent;
+    CarControl_Motion motion;
+
+    if (speedRpm <= 0) {
+        CarControl_stop(&gCar);
+        return;
+    }
+
+    if (pidAbs <= LINE_PID_DEADBAND_RPM_OFFSET) {
+        motion = CAR_CONTROL_FORWARD;
+        CarControl_setMotion(&gCar, motion, speedRpm,
+            CarControl_getTurnInnerPercent(&gCar));
+        return;
+    }
+
+    /* Convert PID output magnitude into inner-wheel speed reduction. */
+    if (pidAbs > speedRpm) {
+        pidAbs = speedRpm;
+    }
+    innerRpm = (int16_t) (speedRpm - pidAbs);
+    if (innerRpm < 0) {
+        innerRpm = 0;
+    }
+
+    innerPercent = (uint8_t) ((int32_t) innerRpm * 100 /
+        (int32_t) speedRpm);
+    if (innerPercent > 100U) {
+        innerPercent = 100U;
+    }
+    if (innerPercent == 0U) {
+        innerPercent = 1U; /* keep non-zero to avoid deadband sticking */
+    }
+
+    /* pid sign: negative => line left => turn left */
+    motion = (pidRpmOffset < 0) ? CAR_CONTROL_FORWARD_LEFT
+                                 : CAR_CONTROL_FORWARD_RIGHT;
+    CarControl_setMotion(&gCar, motion, speedRpm, innerPercent);
+}
+
+static void LineTracking_update(void)
+{
+    uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
+    int16_t err;
+    float pid;
+    float derivative;
+    int16_t pidOffsetRpm;
+    uint8_t activeCount = 0U;
+    uint8_t i;
+
+    /* Read sensors (X1..X8). */
+    Grayscale_Sensor_ReadAll(values);
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
+            activeCount++;
+        }
+    }
+
+    err = LineTracking_computeErr(values);
+    if (activeCount == 0U) {
+        /* Prevent windup when line is lost. */
+        gLineTrackingIntegral = 0.0f;
+    } else {
+        gLineTrackingIntegral += (float) err;
+        if (gLineTrackingIntegral > LINE_PID_INTEGRAL_LIMIT) {
+            gLineTrackingIntegral = LINE_PID_INTEGRAL_LIMIT;
+        } else if (gLineTrackingIntegral < -LINE_PID_INTEGRAL_LIMIT) {
+            gLineTrackingIntegral = -LINE_PID_INTEGRAL_LIMIT;
+        }
+    }
+
+    derivative = (float) (err - gLineTrackingLastErr);
+    pid = (LINE_PID_KP * (float) err) +
+        (LINE_PID_KI * gLineTrackingIntegral) +
+        (LINE_PID_KD * derivative);
+
+    /* Clamp pid to keep within speed reduction range. */
+    {
+        int16_t maxOffset = gLineTrackingBaseSpeedRpm;
+        if (maxOffset < 0) {
+            maxOffset = 0;
+        }
+        if (pid > (float) maxOffset) {
+            pid = (float) maxOffset;
+        } else if (pid < -(float) maxOffset) {
+            pid = -(float) maxOffset;
+        }
+    }
+
+    pidOffsetRpm = (int16_t) pid;
+    gLineTrackingLastErr = err;
+    LineTracking_applyMotion(pidOffsetRpm);
+
+    if (gLineTrackingDebugEnabled) {
+        gLineTrackingDebugDivider++;
+        if (gLineTrackingDebugDivider >=
+            LINE_DEBUG_PRINT_PERIOD_SAMPLES) {
+            gLineTrackingDebugDivider = 0U;
+            UART_sendString("LINE dbg err=");
+            UART_sendInt32((int32_t) err);
+            UART_sendString(" pid=");
+            UART_sendInt32((int32_t) pidOffsetRpm);
+            UART_sendString(" ");
+            UART_sendString("GRAY");
+            for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+                UART_sendString(" X");
+                UART_sendInt32((int32_t) (i + 1U));
+                DL_UART_Main_transmitDataBlocking(
+                    UART_0_INST, (uint8_t) ':');
+                UART_sendInt32((int32_t) values[i]);
+            }
+            UART_sendString("\r\n");
+        }
+    }
 }
 
 static bool Car_parseUnsignedValue(
@@ -687,6 +872,17 @@ static void Car_processUartCommand(void)
         return;
     }
 
+    /* Manual motion commands cancel line tracking. */
+    if (gLineTrackingEnabled && (command != 'I') &&
+        ((command == 'X') || (command == 'T') ||
+         (command == 'F') || (command == 'L') || (command == 'R') ||
+         (command == 'A') || (command == 'B') || (command == 'C') ||
+         (command == 'D'))) {
+        gLineTrackingEnabled = false;
+        gLineTrackingDebugEnabled = false;
+        LineTracking_resetPid();
+    }
+
     if ((command == 'F') || (command == 'B') || (command == 'T')) {
         turnCommand = gUartCommand[index];
         if ((turnCommand >= 'a') && (turnCommand <= 'z')) {
@@ -702,7 +898,87 @@ static void Car_processUartCommand(void)
     if (command == 'X') {
         AngleTurnControl_cancel(&gAngleTurn);
         CarControl_stop(&gCar);
+        gLineTrackingEnabled = false;
+        gLineTrackingDebugEnabled = false;
+        LineTracking_resetPid();
         UART_sendString("STOPPED\r\n");
+        return;
+    }
+    if (command == 'I') {
+        uint16_t newSpeed;
+        bool setSpeed = false;
+        bool debug = false;
+
+        while ((gUartCommand[index] == ' ') ||
+               (gUartCommand[index] == '\t')) {
+            index++;
+        }
+
+        /* Parse I form:
+         *   I      : start with previous speed (debug=0)
+         *   I0     : stop
+         *   I1     : start debug (keep previous speed)
+         *   I<rpm> : start with speed=<rpm> (debug=0)
+         *
+         * Important: do not decide by first digit only.
+         * E.g. "I 10" must become speed=10, not debug=1.
+         */
+        if (gUartCommand[index] == '\0') {
+            /* start with previous speed */
+        } else {
+            uint8_t indexAfter = index;
+            if (!Car_parseUnsignedValue(&indexAfter,
+                    MOTOR_MAX_TARGET_RPM, &newSpeed)) {
+                UART_sendString("LINE_FORMAT_ERROR usage: I [rpm] | I0 | I1\r\n");
+                UART_hintHelp();
+                return;
+            }
+
+            while ((gUartCommand[indexAfter] == ' ') ||
+                   (gUartCommand[indexAfter] == '\t')) {
+                indexAfter++;
+            }
+            if (gUartCommand[indexAfter] != '\0') {
+                UART_sendString("LINE_FORMAT_ERROR usage: I [rpm] | I0 | I1\r\n");
+                UART_hintHelp();
+                return;
+            }
+
+            if (newSpeed == 0U) {
+                gLineTrackingEnabled = false;
+                gLineTrackingDebugEnabled = false;
+                LineTracking_resetPid();
+                CarControl_stop(&gCar);
+                UART_sendString("LINE_STOPPED\r\n");
+                return;
+            }
+
+            if (newSpeed == 1U) {
+                debug = true;
+                setSpeed = false; /* keep previous speed */
+            } else {
+                setSpeed = true;
+            }
+            /* indexAfter unused beyond end-check; setSpeed/base speed below. */
+            (void) indexAfter;
+        }
+
+        if (setSpeed) {
+            gLineTrackingBaseSpeedRpm = (int16_t) newSpeed;
+        }
+        if (gLineTrackingBaseSpeedRpm < 1) {
+            gLineTrackingBaseSpeedRpm = CAR_DEFAULT_SPEED_RPM;
+        }
+
+        gLineTrackingEnabled = true;
+        gLineTrackingDebugEnabled = debug;
+        LineTracking_resetPid();
+        AngleTurnControl_cancel(&gAngleTurn);
+        CarControl_stop(&gCar);
+
+        UART_sendString("LINE_STARTED speed=");
+        UART_sendInt32((int32_t) gLineTrackingBaseSpeedRpm);
+        UART_sendString(debug ? " debug=1\r\n" : " debug=0\r\n");
         return;
     }
     if (command == 'T') {
@@ -957,6 +1233,11 @@ int main(void)
     AngleTurnControl_init(&gAngleTurn, &gAngleTurnConfig);
     Grayscale_Sensor_Init();
 
+    gLineTrackingEnabled = false;
+    gLineTrackingDebugEnabled = false;
+    gLineTrackingBaseSpeedRpm = CAR_DEFAULT_SPEED_RPM;
+    LineTracking_resetPid();
+
     UART_printBanner();
     UART_sendString(
         "MPU6050: keep car still for 5 seconds (calibrating)...\r\n");
@@ -1018,6 +1299,10 @@ int main(void)
                     gGrayscaleStreamDivider = 0U;
                     UART_reportGrayscale();
                 }
+            }
+
+            if (gLineTrackingEnabled) {
+                LineTracking_update();
             }
         }
 
