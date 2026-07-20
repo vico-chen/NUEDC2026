@@ -195,7 +195,7 @@ static const AngleTurnControl_Config gAngleTurnConfig = {
     .brakeRateGain = 0.10f,
     .brakeAheadMaxDegrees = 12.0f,
     /* Was 2.0 deg and caused a repeatable ~88 deg result on 90 deg commands. */
-    .angleToleranceDegrees = 0.6f,
+    .angleToleranceDegrees = 0.4f,
     .stoppedRateToleranceDps = 6.0f,
     .settleSamples = 15U,
     .timeoutSamples = 1500U,
