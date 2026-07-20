@@ -256,6 +256,59 @@ static void UART_sendHex8(uint8_t value)
         UART_0_INST, (uint8_t) hexDigits[value & 0x0FU]);
 }
 
+static void UART_printHelp(void)
+{
+    UART_sendString("\r\n");
+    UART_sendString("======== NUEDC2026 UART HELP ========\r\n");
+    UART_sendString("115200 8N1, end each cmd with Enter\r\n");
+    UART_sendString("\r\n");
+    UART_sendString("[Motion]  F/B/L/R [rpm]\r\n");
+    UART_sendString("  F 200     forward\r\n");
+    UART_sendString("  B 200     backward\r\n");
+    UART_sendString("  L 150     pivot left\r\n");
+    UART_sendString("  R 150     pivot right\r\n");
+    UART_sendString("  X         emergency stop\r\n");
+    UART_sendString("\r\n");
+    UART_sendString("[Arc]     FL/FR/BL/BR [rpm] [inner%]\r\n");
+    UART_sendString("  FL 200 70   forward+left arc\r\n");
+    UART_sendString("  default rpm=200, inner%=50\r\n");
+    UART_sendString("\r\n");
+    UART_sendString("[Angle]   TL/TR angle [rpm]\r\n");
+    UART_sendString("  TL 90       left 90 deg (def 100rpm)\r\n");
+    UART_sendString("  TR 45 80    right 45 deg @80rpm\r\n");
+    UART_sendString("\r\n");
+    UART_sendString("[Single]  A/B/C/D [signed rpm]\r\n");
+    UART_sendString("  wheels: C-B front, D-A rear\r\n");
+    UART_sendString("  A 200 / A -150 / A(=0 stop)\r\n");
+    UART_sendString("\r\n");
+    UART_sendString("[Status]\r\n");
+    UART_sendString("  Y / Y0      yaw read / reset\r\n");
+    UART_sendString("  G / G1 / G0 grayscale once/stream/off\r\n");
+    UART_sendString("  M / M1 / M0 motor status once/stream/off\r\n");
+    UART_sendString("  H or ?      this help\r\n");
+    UART_sendString("=====================================\r\n");
+}
+
+static void UART_printBanner(void)
+{
+    UART_sendString("\r\n");
+    UART_sendString("************************************\r\n");
+    UART_sendString("*  NUEDC2026 Car Controller Ready  *\r\n");
+    UART_sendString("*  UART0 115200 8N1                *\r\n");
+    UART_sendString("************************************\r\n");
+    UART_sendString("Quick start:\r\n");
+    UART_sendString("  F 200   forward | X stop\r\n");
+    UART_sendString("  TL 90   turn left 90 deg\r\n");
+    UART_sendString("  G       read grayscale\r\n");
+    UART_sendString("  Y       read yaw angle\r\n");
+    UART_sendString(">>> Send H or ? for full command list\r\n");
+}
+
+static void UART_hintHelp(void)
+{
+    UART_sendString("  (Send H for help)\r\n");
+}
+
 static void UART_reportMotorStatus(
     char motorName, const MotorControl_Status *status)
 {
@@ -620,10 +673,19 @@ static void Car_processUartCommand(void)
         index++;
     }
     command = gUartCommand[index];
+    if (command == '\0') {
+        UART_sendString("Empty cmd. Send H for help.\r\n");
+        return;
+    }
     if ((command >= 'a') && (command <= 'z')) {
         command = (char) (command - ('a' - 'A'));
     }
     index++;
+
+    if ((command == 'H') || (command == '?')) {
+        UART_printHelp();
+        return;
+    }
 
     if ((command == 'F') || (command == 'B') || (command == 'T')) {
         turnCommand = gUartCommand[index];
@@ -648,6 +710,8 @@ static void Car_processUartCommand(void)
             !Car_parseAngleTurnParameters(
                 index, &angleTurnDegrees, &angleTurnMaximumRpm)) {
             UART_sendString("ANGLE_TURN_FORMAT_ERROR\r\n");
+            UART_sendString("  usage: TL|TR angle [rpm]  e.g. TL 90\r\n");
+            UART_hintHelp();
             return;
         }
         if (!gMpu6050Ready) {
@@ -657,7 +721,12 @@ static void Car_processUartCommand(void)
         if (AngleTurnControl_start(&gAngleTurn,
                 turnCommand == 'L', angleTurnDegrees,
                 angleTurnMaximumRpm)) {
-            UART_sendString("ANGLE_TURN_STARTED\r\n");
+            UART_sendString("ANGLE_TURN_STARTED ");
+            UART_sendString((turnCommand == 'L') ? "TL " : "TR ");
+            UART_sendInt32((int32_t) (angleTurnDegrees + 0.05f));
+            UART_sendString(" deg @");
+            UART_sendInt32((int32_t) angleTurnMaximumRpm);
+            UART_sendString(" rpm\r\n");
         }
         return;
     }
@@ -679,11 +748,17 @@ static void Car_processUartCommand(void)
             if (gUartCommand[index] == '\0') {
                 MPU6050_Angle_reset();
                 UART_sendString("z_angle reset to 0.0 deg\r\n");
+            } else {
+                UART_sendString("Y_FORMAT_ERROR  usage: Y | Y0\r\n");
+                UART_hintHelp();
             }
             return;
         }
         if (gUartCommand[index] == '\0') {
             UART_reportZAngle();
+        } else {
+            UART_sendString("Y_FORMAT_ERROR  usage: Y | Y0\r\n");
+            UART_hintHelp();
         }
         return;
     }
@@ -702,6 +777,9 @@ static void Car_processUartCommand(void)
                 gGrayscaleStreamEnabled = true;
                 gGrayscaleStreamDivider = 0U;
                 UART_sendString("GRAY_STREAM_ON\r\n");
+            } else {
+                UART_sendString("G_FORMAT_ERROR  usage: G | G1 | G0\r\n");
+                UART_hintHelp();
             }
             return;
         }
@@ -714,11 +792,17 @@ static void Car_processUartCommand(void)
             if (gUartCommand[index] == '\0') {
                 gGrayscaleStreamEnabled = false;
                 UART_sendString("GRAY_STREAM_OFF\r\n");
+            } else {
+                UART_sendString("G_FORMAT_ERROR  usage: G | G1 | G0\r\n");
+                UART_hintHelp();
             }
             return;
         }
         if (gUartCommand[index] == '\0') {
             UART_reportGrayscale();
+        } else {
+            UART_sendString("G_FORMAT_ERROR  usage: G | G1 | G0\r\n");
+            UART_hintHelp();
         }
         return;
     }
@@ -737,6 +821,9 @@ static void Car_processUartCommand(void)
                 gMotorStatusStreamEnabled = true;
                 gMotorStatusReportOnce = false;
                 UART_sendString("MOTOR_STATUS_STREAM_ON\r\n");
+            } else {
+                UART_sendString("M_FORMAT_ERROR  usage: M | M1 | M0\r\n");
+                UART_hintHelp();
             }
             return;
         }
@@ -750,12 +837,18 @@ static void Car_processUartCommand(void)
                 gMotorStatusStreamEnabled = false;
                 gMotorStatusReportOnce = false;
                 UART_sendString("MOTOR_STATUS_STREAM_OFF\r\n");
+            } else {
+                UART_sendString("M_FORMAT_ERROR  usage: M | M1 | M0\r\n");
+                UART_hintHelp();
             }
             return;
         }
         if (gUartCommand[index] == '\0') {
             gMotorStatusReportOnce = true;
             UART_sendString("MOTOR_STATUS_WAIT\r\n");
+        } else {
+            UART_sendString("M_FORMAT_ERROR  usage: M | M1 | M0\r\n");
+            UART_hintHelp();
         }
         return;
     }
@@ -765,6 +858,8 @@ static void Car_processUartCommand(void)
 
         if (!Car_parseOptionalSignedRpm(index, &singleMotorRpm)) {
             UART_sendString("MOTOR_FORMAT_ERROR\r\n");
+            UART_sendString("  usage: A|B|C|D [signed rpm]  e.g. A 200\r\n");
+            UART_hintHelp();
             return;
         }
         Car_setSingleMotorChassisRpm(command, singleMotorRpm);
@@ -772,13 +867,23 @@ static void Car_processUartCommand(void)
     }
     if ((command != 'F') && (command != 'B') &&
         (command != 'L') && (command != 'R')) {
+        UART_sendString("UNKNOWN_CMD\r\n");
+        UART_hintHelp();
         return;
     }
     if (!Car_parseCommandParameters(index, &speedRpm, &speedSpecified,
             &turnInnerPercent, &turnSpecified)) {
+        UART_sendString("MOTION_FORMAT_ERROR\r\n");
+        UART_sendString(
+            "  usage: F/B/L/R [rpm] | FL/FR/BL/BR [rpm] [inner%]\r\n");
+        UART_hintHelp();
         return;
     }
     if (turnSpecified && (turnCommand == '\0')) {
+        UART_sendString("MOTION_FORMAT_ERROR\r\n");
+        UART_sendString(
+            "  inner% only for FL/FR/BL/BR\r\n");
+        UART_hintHelp();
         return;
     }
 
@@ -808,11 +913,30 @@ static void Car_processUartCommand(void)
             motion = CAR_CONTROL_PIVOT_RIGHT;
             break;
         default:
+            UART_sendString("UNKNOWN_CMD\r\n");
+            UART_hintHelp();
             return;
     }
 
     AngleTurnControl_cancel(&gAngleTurn);
     CarControl_setMotion(&gCar, motion, speedRpm, turnInnerPercent);
+
+    UART_sendString("OK ");
+    DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) command);
+    if (turnCommand != '\0') {
+        DL_UART_Main_transmitDataBlocking(
+            UART_0_INST, (uint8_t) turnCommand);
+    }
+    UART_sendString(" rpm=");
+    UART_sendInt32((int32_t) speedRpm);
+    if ((motion == CAR_CONTROL_FORWARD_LEFT) ||
+        (motion == CAR_CONTROL_FORWARD_RIGHT) ||
+        (motion == CAR_CONTROL_BACKWARD_LEFT) ||
+        (motion == CAR_CONTROL_BACKWARD_RIGHT)) {
+        UART_sendString(" inner%=");
+        UART_sendInt32((int32_t) turnInnerPercent);
+    }
+    UART_sendString("\r\n");
 }
 
 int main(void)
@@ -833,19 +957,20 @@ int main(void)
     AngleTurnControl_init(&gAngleTurn, &gAngleTurnConfig);
     Grayscale_Sensor_Init();
 
+    UART_printBanner();
     UART_sendString(
-        "\r\nMPU6050: keep car still for 5 seconds (calibrating)...\r\n");
+        "MPU6050: keep car still for 5 seconds (calibrating)...\r\n");
     gMpu6050Ready = MPU6050_Angle_init();
     if (gMpu6050Ready) {
         UART_sendString("MPU6050 ready, WHO_AM_I=0x");
         UART_sendHex8((uint8_t) MPU6050_Angle_getDeviceId());
-        UART_sendString(". Send Y to read angle, Y0 to reset.\r\n");
+        UART_sendString("  (Y read, Y0 reset)\r\n");
     } else {
         UART_sendString("MPU6050 init failed.\r\n");
     }
     UART_sendString(
-        "GRAYSCALE: AD0=PB11 AD1=PB5 AD2=PA1 OUT=PA14; G/G1/G0\r\n");
-    UART_sendString("MOTOR_STATUS: M once, M1 stream, M0 stop\r\n");
+        "GRAYSCALE OK  AD0=PB11 AD1=PB5 AD2=PA1 OUT=PA14\r\n");
+    UART_sendString("Ready. Send H for commands.\r\n");
 
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);
