@@ -37,6 +37,7 @@ typedef struct {
 
 void CarControl_init(CarControl *car, const CarControl_Config *config);
 void CarControl_stop(CarControl *car);
+void CarControl_coast(CarControl *car);
 void CarControl_setMotion(CarControl *car, CarControl_Motion motion,
     int16_t speedRpm, uint8_t turnInnerPercent);
 int16_t CarControl_getSpeedRpm(const CarControl *car);

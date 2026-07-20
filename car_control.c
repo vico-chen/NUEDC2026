@@ -27,6 +27,14 @@ void CarControl_stop(CarControl *car)
     CarControl_setWheelRpm(car, 0, 0, 0, 0);
 }
 
+void CarControl_coast(CarControl *car)
+{
+    MotorControl_coast(car->config.rightRearMotor);
+    MotorControl_coast(car->config.rightFrontMotor);
+    MotorControl_coast(car->config.leftFrontMotor);
+    MotorControl_coast(car->config.leftRearMotor);
+}
+
 void CarControl_setMotion(CarControl *car, CarControl_Motion motion,
     int16_t speedRpm, uint8_t turnInnerPercent)
 {

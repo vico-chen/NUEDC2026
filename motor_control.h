@@ -53,11 +53,13 @@ typedef struct {
     float pidPreviousError;
     int8_t pidDirection;
     int8_t zeroBrakeDirection;
+    bool coastMode;
 } MotorControl;
 
 void MotorControl_init(
     MotorControl *motor, const MotorControl_Config *config);
 void MotorControl_setTargetRpm(MotorControl *motor, int16_t targetRpm);
+void MotorControl_coast(MotorControl *motor);
 void MotorControl_handleEncoderEdge(MotorControl *motor);
 void MotorControl_update(MotorControl *motor);
 bool MotorControl_takeStatus(

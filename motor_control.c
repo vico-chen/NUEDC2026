@@ -74,6 +74,13 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
     float increment;
 
     if (targetRpm == 0) {
+        if (motor->coastMode) {
+            MotorControl_resetPid(motor);
+            motor->zeroBrakeDirection = 0;
+            motor->pidDirection = 0;
+            return 0;
+        }
+
         if (motor->pidDirection != 0) {
             motor->zeroBrakeDirection = -motor->pidDirection;
             motor->pidDirection = 0;
@@ -172,7 +179,18 @@ void MotorControl_setTargetRpm(MotorControl *motor, int16_t targetRpm)
     } else if (targetRpm < -motor->config.maxTargetRpm) {
         targetRpm = -motor->config.maxTargetRpm;
     }
+    motor->coastMode = false;
     motor->targetRpm = targetRpm;
+}
+
+void MotorControl_coast(MotorControl *motor)
+{
+    motor->targetRpm = 0;
+    motor->coastMode = true;
+    motor->zeroBrakeDirection = 0;
+    motor->pidDirection = 0;
+    MotorControl_resetPid(motor);
+    MotorControl_applyOutput(motor, 0);
 }
 
 void MotorControl_handleEncoderEdge(MotorControl *motor)

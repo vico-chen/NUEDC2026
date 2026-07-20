@@ -9,28 +9,23 @@
 typedef enum {
     ANGLE_TURN_RESULT_NONE,
     ANGLE_TURN_RESULT_COMPLETED,
-    ANGLE_TURN_RESULT_TIMEOUT
+    ANGLE_TURN_RESULT_TIMEOUT,
+    ANGLE_TURN_RESULT_FAULT
 } AngleTurnControl_Result;
 
 typedef struct {
     CarControl *car;
     int8_t leftTurnYawSign;
-    float kpRpmPerDegree;
-    float kdRpmPerDps;
-    int16_t minimumRpm;
-    int16_t defaultMaximumRpm;
+    int16_t defaultCruiseRpm;
+    int16_t creepRpm;
+    /*
+     * Predicted coast distance = clamp(tolerance + gain * approachRate,
+     *                                  tolerance, brakeAheadMax).
+     */
+    float brakeRateGain;
+    float brakeAheadMaxDegrees;
+    /* Acceptable final error for DONE. */
     float angleToleranceDegrees;
-    /*
-     * After the controller enters the stop/hold window, it keeps braking
-     * until |error| exceeds this larger hysteresis band. Prevents hunting
-     * around the tolerance edge.
-     */
-    float holdReleaseDegrees;
-    /*
-     * Below this remaining error, do not force minimumRpm. Tiny residual
-     * error should brake/coast instead of kicking the chassis again.
-     */
-    float minRpmEngageDegrees;
     float stoppedRateToleranceDps;
     uint16_t settleSamples;
     uint16_t timeoutSamples;
@@ -38,18 +33,21 @@ typedef struct {
 
 typedef struct {
     AngleTurnControl_Config config;
-    float targetYawDegrees;
-    int16_t maximumRpm;
+    float targetAbsDegrees;
+    float turnDirection;
+    int16_t cruiseRpm;
     uint16_t settledCount;
+    uint16_t coastSamples;
     uint16_t elapsedSamples;
     bool active;
-    bool holding;
+    bool coasting;
+    bool creeping;
 } AngleTurnControl;
 
 void AngleTurnControl_init(
     AngleTurnControl *control, const AngleTurnControl_Config *config);
 bool AngleTurnControl_start(AngleTurnControl *control, bool turnLeft,
-    float relativeAngleDegrees, int16_t maximumRpm);
+    float relativeAngleDegrees, int16_t cruiseRpm);
 AngleTurnControl_Result AngleTurnControl_update(AngleTurnControl *control);
 void AngleTurnControl_cancel(AngleTurnControl *control);
 bool AngleTurnControl_isActive(const AngleTurnControl *control);

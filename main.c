@@ -44,7 +44,7 @@
 #define CAR_DEFAULT_SPEED_RPM (200)
 #define CAR_DEFAULT_TURN_INNER_PERCENT (50U)
 #define ENABLE_MOTOR_STATUS_UART (0)
-#define ANGLE_TURN_DEFAULT_MAX_RPM (180)
+#define ANGLE_TURN_DEFAULT_MAX_RPM (100)
 #define ANGLE_TURN_LEFT_YAW_SIGN (1)
 
 /*
@@ -190,15 +190,14 @@ static const AngleTurnControl_Config gAngleTurnConfig = {
      * Change to -1 if a manual left turn makes the reported Y angle decrease.
      */
     .leftTurnYawSign = ANGLE_TURN_LEFT_YAW_SIGN,
-    .kpRpmPerDegree = 3.0f,
-    .kdRpmPerDps = 0.8f,
-    .minimumRpm = 40,
-    .defaultMaximumRpm = ANGLE_TURN_DEFAULT_MAX_RPM,
-    .angleToleranceDegrees = 0.5f,
-    .holdReleaseDegrees = 1.8f,
-    .minRpmEngageDegrees = 3.0f,
-    .stoppedRateToleranceDps = 4.0f,
-    .settleSamples = 15U,
+    .defaultCruiseRpm = ANGLE_TURN_DEFAULT_MAX_RPM,
+    .creepRpm = 45,
+    .brakeRateGain = 0.12f,
+    .brakeAheadMaxDegrees = 14.0f,
+    .angleToleranceDegrees = 2.0f,
+    .stoppedRateToleranceDps = 8.0f,
+    /* Brief coast after entering the tolerance window. */
+    .settleSamples = 20U,
     .timeoutSamples = 1500U,
 };
 
@@ -639,6 +638,9 @@ int main(void)
             } else if (angleTurnResult == ANGLE_TURN_RESULT_TIMEOUT) {
                 UART_sendString("ANGLE_TURN_TIMEOUT ");
                 UART_reportZAngle();
+            } else if (angleTurnResult == ANGLE_TURN_RESULT_FAULT) {
+                UART_sendString(
+                    "ANGLE_TURN_FAULT check ANGLE_TURN_LEFT_YAW_SIGN\r\n");
             }
         }
 
