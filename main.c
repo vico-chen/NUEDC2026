@@ -36,6 +36,7 @@
 #include "mpu6050_angle.h"
 #include "angle_turn_control.h"
 #include "grayscale_sensor.h"
+#include "oled_test.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -977,7 +978,8 @@ static void Car_processUartCommand(void)
 
     if (command == 'X') {
         AngleTurnControl_cancel(&gAngleTurn);
-        CarControl_stop(&gCar);
+        /* X is an emergency stop: immediately remove motor drive. */
+        CarControl_emergencyStop(&gCar);
         gLineTrackingEnabled = false;
         gLineTrackingDebugEnabled = false;
         LineTracking_resetPid();
@@ -1314,7 +1316,11 @@ static void Car_processUartCommand(void)
 
 int main(void)
 {
+    bool oledReady;
+
     SYSCFG_DL_init();
+
+    oledReady = OLED_Test_initAndShowHelloWorld();
 
     /*
      * Wheel map: A right-rear, B right-front, C left-front, D left-rear.
@@ -1336,6 +1342,8 @@ int main(void)
     LineTracking_resetPid();
 
     UART_printBanner();
+    UART_sendString(oledReady ? "OLED: Hello World displayed.\r\n"
+                              : "OLED init failed: check I2C address/wiring.\r\n");
     UART_sendString(
         "MPU6050: keep car still for 5 seconds (calibrating)...\r\n");
     gMpu6050Ready = MPU6050_Angle_init();

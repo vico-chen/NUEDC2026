@@ -36,6 +36,8 @@ typedef struct {
 } CarControl;
 
 void CarControl_init(CarControl *car, const CarControl_Config *config);
+/* Immediate safe stop: disables PWM drive and clears every wheel PID state. */
+void CarControl_emergencyStop(CarControl *car);
 void CarControl_stop(CarControl *car);
 void CarControl_coast(CarControl *car);
 void CarControl_setMotion(CarControl *car, CarControl_Motion motion,

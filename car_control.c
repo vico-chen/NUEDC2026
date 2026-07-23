@@ -27,6 +27,16 @@ void CarControl_stop(CarControl *car)
     CarControl_setWheelRpm(car, 0, 0, 0, 0);
 }
 
+void CarControl_emergencyStop(CarControl *car)
+{
+    /*
+     * Do not use CarControl_stop() here. A zero speed target deliberately
+     * enters the closed-loop reverse-braking branch, which is unsuitable for
+     * an emergency command if an encoder is noisy or has the wrong polarity.
+     */
+    CarControl_coast(car);
+}
+
 void CarControl_coast(CarControl *car)
 {
     MotorControl_coast(car->config.rightRearMotor);

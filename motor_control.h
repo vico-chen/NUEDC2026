@@ -53,7 +53,8 @@ typedef struct {
     float pidPreviousError;
     int8_t pidDirection;
     int8_t zeroBrakeDirection;
-    bool coastMode;
+    /* Written by the foreground command handler and read by the 10 ms ISR. */
+    volatile bool coastMode;
 } MotorControl;
 
 void MotorControl_init(

@@ -6,6 +6,7 @@
 "./startup_mspm0g350x_ticlang.o"
 "./motor_control.o"
 "./mpu6050_angle.o"
+"./oled_test.o"
 -l"./device_linker.cmd"
 -ldevice.cmd.genlibs
 -llibc.a

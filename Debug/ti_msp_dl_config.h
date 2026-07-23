@@ -142,14 +142,15 @@ extern "C" {
 #define I2C_OLED_INST                                                       I2C1
 #define I2C_OLED_INST_IRQHandler                                 I2C1_IRQHandler
 #define I2C_OLED_INST_INT_IRQN                                     I2C1_INT_IRQn
-#define GPIO_I2C_OLED_SDA_PORT                                             GPIOA
-#define GPIO_I2C_OLED_SDA_PIN                                     DL_GPIO_PIN_16
-#define GPIO_I2C_OLED_IOMUX_SDA                                  (IOMUX_PINCM38)
-#define GPIO_I2C_OLED_IOMUX_SDA_FUNC                   IOMUX_PINCM38_PF_I2C1_SDA
-#define GPIO_I2C_OLED_SCL_PORT                                             GPIOA
-#define GPIO_I2C_OLED_SCL_PIN                                     DL_GPIO_PIN_15
-#define GPIO_I2C_OLED_IOMUX_SCL                                  (IOMUX_PINCM37)
-#define GPIO_I2C_OLED_IOMUX_SCL_FUNC                   IOMUX_PINCM37_PF_I2C1_SCL
+#define I2C_OLED_BUS_SPEED_HZ                                             400000
+#define GPIO_I2C_OLED_SDA_PORT                                             GPIOB
+#define GPIO_I2C_OLED_SDA_PIN                                      DL_GPIO_PIN_3
+#define GPIO_I2C_OLED_IOMUX_SDA                                  (IOMUX_PINCM16)
+#define GPIO_I2C_OLED_IOMUX_SDA_FUNC                   IOMUX_PINCM16_PF_I2C1_SDA
+#define GPIO_I2C_OLED_SCL_PORT                                             GPIOB
+#define GPIO_I2C_OLED_SCL_PIN                                      DL_GPIO_PIN_2
+#define GPIO_I2C_OLED_IOMUX_SCL                                  (IOMUX_PINCM15)
+#define GPIO_I2C_OLED_IOMUX_SCL_FUNC                   IOMUX_PINCM15_PF_I2C1_SCL
 
 
 /* Defines for UART_0 */
