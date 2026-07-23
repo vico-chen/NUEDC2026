@@ -54,9 +54,12 @@
 #define LINE_PID_KI (0.01f)
 #define LINE_PID_KD (0.0f)
 #define LINE_PID_INTEGRAL_LIMIT (2000.0f)
-#define LINE_PID_DEADBAND_RPM_OFFSET (3) /* within this => straight */
+#define LINE_PID_DEADBAND_RPM_OFFSET (8) /* within this => straight */
+#define LINE_ERR_DEADBAND (5) /* |err|<=5 treated as centered */
 #define LINE_ERR_ABS_FALLBACK (30) /* when no sensor active */
 #define LINE_DEBUG_PRINT_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
+/* Debounce: require this many equal samples before accepting a bit flip. */
+#define LINE_SENSOR_DEBOUNCE_SAMPLES (2U)
 
 /*
  * Wheel layout:
@@ -226,6 +229,10 @@ static int16_t gLineTrackingBaseSpeedRpm;
 static float gLineTrackingIntegral;
 static int16_t gLineTrackingLastErr;
 static uint8_t gLineTrackingDebugDivider;
+static uint8_t gLineFilteredValues[GRAYSCALE_SENSOR_CHANNELS];
+static uint8_t gLinePendingValues[GRAYSCALE_SENSOR_CHANNELS];
+static uint8_t gLinePendingCount[GRAYSCALE_SENSOR_CHANNELS];
+static bool gLineFilterReady;
 
 static bool gMotorStatusStreamEnabled;
 static bool gMotorStatusReportOnce;
@@ -295,9 +302,10 @@ static void UART_printHelp(void)
     UART_sendString("  TL 90       left 90 deg (def 100rpm)\r\n");
     UART_sendString("  TR 45 80    right 45 deg @80rpm\r\n");
     UART_sendString("\r\n");
-    UART_sendString("[Single]  A/B/C/D [signed rpm]\r\n");
+    UART_sendString("[Single]  WA/WB/WC/WD [signed rpm]\r\n");
     UART_sendString("  wheels: C-B front, D-A rear\r\n");
-    UART_sendString("  A 200 / A -150 / A(=0 stop)\r\n");
+    UART_sendString("  WA 200 / WB -150 / WA(=0 stop)\r\n");
+    UART_sendString("  note: B alone = car BACK, use WB for motor B\r\n");
     UART_sendString("\r\n");
     UART_sendString("[Line]    I [speed] | I0 stop | I1 debug\r\n");
     UART_sendString("  I 200     start line tracking (black line => X=1)\r\n");
@@ -457,32 +465,102 @@ static void UART_reportGrayscale(void)
 
 static void LineTracking_resetPid(void)
 {
+    uint8_t i;
+
     gLineTrackingIntegral = 0.0f;
     gLineTrackingLastErr = 0;
     gLineTrackingDebugDivider = 0U;
+    gLineFilterReady = false;
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        gLineFilteredValues[i] = 0U;
+        gLinePendingValues[i] = 0U;
+        gLinePendingCount[i] = 0U;
+    }
+}
+
+/*
+ * Debounce digital chatter (especially X4/X5 on the line edge).
+ * A channel value only flips after N identical new samples in a row.
+ */
+static void LineTracking_filterSensors(
+    const uint8_t raw[GRAYSCALE_SENSOR_CHANNELS],
+    uint8_t filtered[GRAYSCALE_SENSOR_CHANNELS])
+{
+    uint8_t i;
+
+    if (!gLineFilterReady) {
+        for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+            gLineFilteredValues[i] = raw[i];
+            gLinePendingValues[i] = raw[i];
+            gLinePendingCount[i] = 0U;
+            filtered[i] = raw[i];
+        }
+        gLineFilterReady = true;
+        return;
+    }
+
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        if (raw[i] == gLineFilteredValues[i]) {
+            gLinePendingValues[i] = raw[i];
+            gLinePendingCount[i] = 0U;
+        } else if (raw[i] == gLinePendingValues[i]) {
+            if (gLinePendingCount[i] < 255U) {
+                gLinePendingCount[i]++;
+            }
+            if (gLinePendingCount[i] >= LINE_SENSOR_DEBOUNCE_SAMPLES) {
+                gLineFilteredValues[i] = raw[i];
+                gLinePendingCount[i] = 0U;
+            }
+        } else {
+            gLinePendingValues[i] = raw[i];
+            gLinePendingCount[i] = 1U;
+        }
+        filtered[i] = gLineFilteredValues[i];
+    }
 }
 
 static int16_t LineTracking_computeErr(
     const uint8_t values[GRAYSCALE_SENSOR_CHANNELS])
 {
-    /* Weights for X1..X8: left negative, right positive. */
+    /*
+     * Weights for X1..X8: left negative, right positive.
+     * X4/X5 are the center pair: weight 0 so single-channel flicker
+     * on the line edge does not create ±err and left/right hunting.
+     */
     static const int16_t weights[GRAYSCALE_SENSOR_CHANNELS] = {
-        -30, -20, -15, -5, 5, 15, 20, 30
+        -30, -20, -15, 0, 0, 15, 20, 30
     };
 
     int32_t weightedSum = 0;
     uint8_t activeCount = 0U;
+    uint8_t outerActive = 0U;
+    uint8_t centerActive = 0U;
     uint8_t i;
+    int16_t err;
 
     for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
         if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
             weightedSum += (int32_t) weights[i];
             activeCount++;
+            if ((i == 3U) || (i == 4U)) {
+                centerActive++;
+            } else {
+                outerActive++;
+            }
         }
     }
 
+    /* Only center sensors on the line => treat as perfectly centered. */
+    if ((centerActive > 0U) && (outerActive == 0U)) {
+        return 0;
+    }
+
     if (activeCount > 0U) {
-        return (int16_t) (weightedSum / (int32_t) activeCount);
+        err = (int16_t) (weightedSum / (int32_t) activeCount);
+        if ((err <= LINE_ERR_DEADBAND) && (err >= -LINE_ERR_DEADBAND)) {
+            return 0;
+        }
+        return err;
     }
 
     /* Lost line: keep turning toward last known direction. */
@@ -542,6 +620,7 @@ static void LineTracking_applyMotion(int16_t pidRpmOffset)
 
 static void LineTracking_update(void)
 {
+    uint8_t rawValues[GRAYSCALE_SENSOR_CHANNELS];
     uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
     int16_t err;
     float pid;
@@ -550,8 +629,9 @@ static void LineTracking_update(void)
     uint8_t activeCount = 0U;
     uint8_t i;
 
-    /* Read sensors (X1..X8). */
-    Grayscale_Sensor_ReadAll(values);
+    /* Read sensors (X1..X8), then debounce chatter. */
+    Grayscale_Sensor_ReadAll(rawValues);
+    LineTracking_filterSensors(rawValues, values);
     for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
         if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
             activeCount++;
@@ -559,8 +639,8 @@ static void LineTracking_update(void)
     }
 
     err = LineTracking_computeErr(values);
-    if (activeCount == 0U) {
-        /* Prevent windup when line is lost. */
+    if ((activeCount == 0U) || (err == 0)) {
+        /* Prevent windup when centered or line is lost. */
         gLineTrackingIntegral = 0.0f;
     } else {
         gLineTrackingIntegral += (float) err;
@@ -875,9 +955,9 @@ static void Car_processUartCommand(void)
     /* Manual motion commands cancel line tracking. */
     if (gLineTrackingEnabled && (command != 'I') &&
         ((command == 'X') || (command == 'T') ||
-         (command == 'F') || (command == 'L') || (command == 'R') ||
-         (command == 'A') || (command == 'B') || (command == 'C') ||
-         (command == 'D'))) {
+         (command == 'F') || (command == 'B') ||
+         (command == 'L') || (command == 'R') ||
+         (command == 'W'))) {
         gLineTrackingEnabled = false;
         gLineTrackingDebugEnabled = false;
         LineTracking_resetPid();
@@ -1128,17 +1208,34 @@ static void Car_processUartCommand(void)
         }
         return;
     }
-    if ((command == 'A') || (command == 'B') ||
-        (command == 'C') || (command == 'D')) {
+    if (command == 'W') {
+        char motorName;
         int16_t singleMotorRpm;
 
-        if (!Car_parseOptionalSignedRpm(index, &singleMotorRpm)) {
+        motorName = gUartCommand[index];
+        if ((motorName >= 'a') && (motorName <= 'z')) {
+            motorName = (char) (motorName - ('a' - 'A'));
+        }
+        if ((motorName != 'A') && (motorName != 'B') &&
+            (motorName != 'C') && (motorName != 'D')) {
             UART_sendString("MOTOR_FORMAT_ERROR\r\n");
-            UART_sendString("  usage: A|B|C|D [signed rpm]  e.g. A 200\r\n");
+            UART_sendString(
+                "  usage: WA|WB|WC|WD [signed rpm]  e.g. WA 200\r\n");
+            UART_sendString(
+                "  note: B = car BACKWARD; WB = motor B only\r\n");
             UART_hintHelp();
             return;
         }
-        Car_setSingleMotorChassisRpm(command, singleMotorRpm);
+        index++;
+
+        if (!Car_parseOptionalSignedRpm(index, &singleMotorRpm)) {
+            UART_sendString("MOTOR_FORMAT_ERROR\r\n");
+            UART_sendString(
+                "  usage: WA|WB|WC|WD [signed rpm]  e.g. WA 200\r\n");
+            UART_hintHelp();
+            return;
+        }
+        Car_setSingleMotorChassisRpm(motorName, singleMotorRpm);
         return;
     }
     if ((command != 'F') && (command != 'B') &&
