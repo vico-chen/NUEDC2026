@@ -95,8 +95,11 @@ static const uint8_t *OLED_getGlyph(char character)
     static const uint8_t space[5] = {0x00U, 0x00U, 0x00U, 0x00U, 0x00U};
     static const uint8_t A[5] = {0x7EU, 0x11U, 0x11U, 0x11U, 0x7EU};
     static const uint8_t C[5] = {0x3EU, 0x41U, 0x41U, 0x41U, 0x22U};
+    static const uint8_t D[5] = {0x7FU, 0x41U, 0x41U, 0x22U, 0x1CU};
+    static const uint8_t E[5] = {0x7FU, 0x49U, 0x49U, 0x49U, 0x41U};
     static const uint8_t K[5] = {0x7FU, 0x08U, 0x14U, 0x22U, 0x41U};
     static const uint8_t L[5] = {0x7FU, 0x40U, 0x40U, 0x40U, 0x40U};
+    static const uint8_t N[5] = {0x7FU, 0x04U, 0x08U, 0x10U, 0x7FU};
     static const uint8_t S[5] = {0x46U, 0x49U, 0x49U, 0x49U, 0x31U};
     static const uint8_t T[5] = {0x01U, 0x01U, 0x7FU, 0x01U, 0x01U};
     static const uint8_t one[5] = {0x00U, 0x42U, 0x7FU, 0x40U, 0x00U};
@@ -113,8 +116,11 @@ static const uint8_t *OLED_getGlyph(char character)
         case '5': return five;
         case 'A': return A;
         case 'C': return C;
+        case 'D': return D;
+        case 'E': return E;
         case 'K': return K;
         case 'L': return L;
+        case 'N': return N;
         case 'S': return S;
         case 'T': return T;
         default: return space;
@@ -172,6 +178,18 @@ bool OLED_ShowTask(uint8_t taskNumber)
 
     taskText[5] = (char) ('0' + taskNumber);
     return OLED_clear() && OLED_writeString(46U, 3U, taskText);
+}
+
+bool OLED_ShowTask1Endpoint(uint8_t endpointNumber)
+{
+    char endpointText[] = "TASK1 END1";
+
+    if ((endpointNumber < 1U) || (endpointNumber > 2U)) {
+        return false;
+    }
+
+    endpointText[9] = (char) ('0' + endpointNumber);
+    return OLED_clear() && OLED_writeString(34U, 3U, endpointText);
 }
 
 bool OLED_ShowCalibration(uint8_t secondsRemaining)

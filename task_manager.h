@@ -10,8 +10,14 @@ typedef enum {
     TASK_MANAGER_TASK_3 = 3
 } TaskManager_Task;
 
+typedef enum {
+    TASK_MANAGER_TASK1_ENDPOINT_1 = 1,
+    TASK_MANAGER_TASK1_ENDPOINT_2 = 2
+} TaskManager_Task1Endpoint;
+
 void TaskManager_init(bool oledReady);
 void TaskManager_update(void);
 TaskManager_Task TaskManager_getActiveTask(void);
+TaskManager_Task1Endpoint TaskManager_getTask1Endpoint(void);
 
 #endif /* TASK_MANAGER_H_ */

@@ -169,22 +169,22 @@ extern "C" {
 #define UART_0_BAUD_RATE                                                (115200)
 #define UART_0_IBRD_32_MHZ_115200_BAUD                                      (17)
 #define UART_0_FBRD_32_MHZ_115200_BAUD                                      (23)
-/* Defines for UART_1 */
-#define UART_1_INST                                                        UART1
-#define UART_1_INST_FREQUENCY                                           32000000
-#define UART_1_INST_IRQHandler                                  UART1_IRQHandler
-#define UART_1_INST_INT_IRQN                                      UART1_INT_IRQn
-#define GPIO_UART_1_RX_PORT                                                GPIOA
-#define GPIO_UART_1_TX_PORT                                                GPIOB
-#define GPIO_UART_1_RX_PIN                                         DL_GPIO_PIN_9
-#define GPIO_UART_1_TX_PIN                                         DL_GPIO_PIN_4
-#define GPIO_UART_1_IOMUX_RX                                     (IOMUX_PINCM20)
-#define GPIO_UART_1_IOMUX_TX                                     (IOMUX_PINCM17)
-#define GPIO_UART_1_IOMUX_RX_FUNC                      IOMUX_PINCM20_PF_UART1_RX
-#define GPIO_UART_1_IOMUX_TX_FUNC                      IOMUX_PINCM17_PF_UART1_TX
-#define UART_1_BAUD_RATE                                                  (9600)
-#define UART_1_IBRD_32_MHZ_9600_BAUD                                       (208)
-#define UART_1_FBRD_32_MHZ_9600_BAUD                                        (21)
+/* Defines for UART_OPENMV */
+#define UART_OPENMV_INST                                                   UART1
+#define UART_OPENMV_INST_FREQUENCY                                      32000000
+#define UART_OPENMV_INST_IRQHandler                             UART1_IRQHandler
+#define UART_OPENMV_INST_INT_IRQN                                 UART1_INT_IRQn
+#define GPIO_UART_OPENMV_RX_PORT                                           GPIOA
+#define GPIO_UART_OPENMV_TX_PORT                                           GPIOB
+#define GPIO_UART_OPENMV_RX_PIN                                    DL_GPIO_PIN_9
+#define GPIO_UART_OPENMV_TX_PIN                                    DL_GPIO_PIN_4
+#define GPIO_UART_OPENMV_IOMUX_RX                                (IOMUX_PINCM20)
+#define GPIO_UART_OPENMV_IOMUX_TX                                (IOMUX_PINCM17)
+#define GPIO_UART_OPENMV_IOMUX_RX_FUNC                 IOMUX_PINCM20_PF_UART1_RX
+#define GPIO_UART_OPENMV_IOMUX_TX_FUNC                 IOMUX_PINCM17_PF_UART1_TX
+#define UART_OPENMV_BAUD_RATE                                             (9600)
+#define UART_OPENMV_IBRD_32_MHZ_9600_BAUD                                  (208)
+#define UART_OPENMV_FBRD_32_MHZ_9600_BAUD                                   (21)
 
 
 
@@ -251,10 +251,10 @@ extern "C" {
 #define GPIO_MOTOR_D_DIN_1_PORT                                          (GPIOB)
 #define GPIO_MOTOR_D_DIN_1_PIN                                  (DL_GPIO_PIN_18)
 #define GPIO_MOTOR_D_DIN_1_IOMUX                                 (IOMUX_PINCM44)
-/* Defines for DIN_2: GPIOA.18 with pinCMx 40 on package pin 11 */
+/* Defines for DIN_2: GPIOA.15 with pinCMx 37 on package pin 8 */
 #define GPIO_MOTOR_D_DIN_2_PORT                                          (GPIOA)
-#define GPIO_MOTOR_D_DIN_2_PIN                                  (DL_GPIO_PIN_18)
-#define GPIO_MOTOR_D_DIN_2_IOMUX                                 (IOMUX_PINCM40)
+#define GPIO_MOTOR_D_DIN_2_PIN                                  (DL_GPIO_PIN_15)
+#define GPIO_MOTOR_D_DIN_2_IOMUX                                 (IOMUX_PINCM37)
 /* Defines for EA_4: GPIOA.24 with pinCMx 54 on package pin 25 */
 #define GPIO_MOTOR_D_EA_4_PORT                                           (GPIOA)
 #define GPIO_MOTOR_D_EA_4_PIN                                   (DL_GPIO_PIN_24)
@@ -280,15 +280,18 @@ extern "C" {
 #define GPIO_GRAYSCALE_OUT_PORT                                          (GPIOA)
 #define GPIO_GRAYSCALE_OUT_PIN                                  (DL_GPIO_PIN_14)
 #define GPIO_GRAYSCALE_OUT_IOMUX                                 (IOMUX_PINCM36)
-/* Port definition for Pin Group GPIO_BTN */
-#define GPIO_BTN_PORT                                                    (GPIOB)
-
 /* Defines for PIN_STATUS: GPIOB.1 with pinCMx 13 on package pin 48 */
+#define GPIO_BTN_PIN_STATUS_PORT                                         (GPIOB)
 #define GPIO_BTN_PIN_STATUS_PIN                                  (DL_GPIO_PIN_1)
 #define GPIO_BTN_PIN_STATUS_IOMUX                                (IOMUX_PINCM13)
 /* Defines for PIN_TASK: GPIOB.21 with pinCMx 49 on package pin 20 */
+#define GPIO_BTN_PIN_TASK_PORT                                           (GPIOB)
 #define GPIO_BTN_PIN_TASK_PIN                                   (DL_GPIO_PIN_21)
 #define GPIO_BTN_PIN_TASK_IOMUX                                  (IOMUX_PINCM49)
+/* Defines for PIN_TASK1_CHANGE: GPIOA.18 with pinCMx 40 on package pin 11 */
+#define GPIO_BTN_PIN_TASK1_CHANGE_PORT                                   (GPIOA)
+#define GPIO_BTN_PIN_TASK1_CHANGE_PIN                           (DL_GPIO_PIN_18)
+#define GPIO_BTN_PIN_TASK1_CHANGE_IOMUX                          (IOMUX_PINCM40)
 /* Port definition for Pin Group GPIO_LED */
 #define GPIO_LED_PORT                                                    (GPIOB)
 
@@ -315,7 +318,7 @@ void SYSCFG_DL_TIMER_PID_init(void);
 void SYSCFG_DL_I2C_MPU6050_init(void);
 void SYSCFG_DL_I2C_OLED_init(void);
 void SYSCFG_DL_UART_0_init(void);
-void SYSCFG_DL_UART_1_init(void);
+void SYSCFG_DL_UART_OPENMV_init(void);
 
 
 bool SYSCFG_DL_saveConfiguration(void);
