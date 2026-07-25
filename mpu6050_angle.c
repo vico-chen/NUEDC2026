@@ -11,6 +11,7 @@
 #include "mpu6050_angle.h"
 #include "ti_msp_dl_config.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define MPU6050_I2C_ADDRESS             (0x68U)
@@ -160,7 +161,8 @@ static bool MPU6050_readGyroZRaw(int16_t *gyroZRaw)
     return true;
 }
 
-bool MPU6050_Angle_init(void)
+bool MPU6050_Angle_initWithProgress(
+    MPU6050_CalibrationProgressCallback progressCallback)
 {
     int64_t gyroZSum = 0;
     uint16_t sample;
@@ -170,6 +172,10 @@ bool MPU6050_Angle_init(void)
     gZAngleDegrees = 0.0f;
     gZRateDps = 0.0f;
     gDeviceId = 0U;
+
+    if (progressCallback != NULL) {
+        progressCallback(5U);
+    }
 
     delay_cycles(MPU6050_POWER_UP_DELAY_CYCLES);
     if (!MPU6050_readRegisters(MPU6050_REG_WHO_AM_I, &gDeviceId, 1U) ||
@@ -199,6 +205,10 @@ bool MPU6050_Angle_init(void)
 
     /* Keep the car completely still during this approximately 5 s step. */
     for (sample = 0U; sample < MPU6050_CALIBRATION_SAMPLES; sample++) {
+        if ((progressCallback != NULL) && ((sample % 100U) == 0U)) {
+            progressCallback((uint8_t) ((MPU6050_CALIBRATION_SAMPLES - sample) /
+                100U));
+        }
         if (!MPU6050_readGyroZRaw(&gyroZRaw)) {
             return false;
         }
@@ -209,6 +219,11 @@ bool MPU6050_Angle_init(void)
     gGyroZBiasRaw =
         (float) gyroZSum / (float) MPU6050_CALIBRATION_SAMPLES;
     return true;
+}
+
+bool MPU6050_Angle_init(void)
+{
+    return MPU6050_Angle_initWithProgress(NULL);
 }
 
 bool MPU6050_Angle_update(void)

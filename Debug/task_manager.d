@@ -1,6 +1,6 @@
 # FIXED
 
-oled_test.o: ../oled_test.c ../oled_test.h \
+task_manager.o: ../task_manager.c ../task_manager.h ../oled.h \
  ti_msp_dl_config.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h \
@@ -84,7 +84,8 @@ oled_test.o: ../oled_test.c ../oled_test.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h
-../oled_test.h:
+../task_manager.h:
+../oled.h:
 ti_msp_dl_config.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h:

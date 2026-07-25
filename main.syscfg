@@ -19,6 +19,8 @@ const GPIO2  = GPIO.addInstance();
 const GPIO3  = GPIO.addInstance();
 const GPIO4  = GPIO.addInstance();
 const GPIO5  = GPIO.addInstance();
+const GPIO6  = GPIO.addInstance();
+const GPIO7  = GPIO.addInstance();
 const I2C    = scripting.addModule("/ti/driverlib/I2C", {}, false);
 const I2C1   = I2C.addInstance();
 const I2C2   = I2C.addInstance();
@@ -145,6 +147,30 @@ GPIO5.associatedPins[3].assignedPort     = "PORTA";
 GPIO5.associatedPins[3].assignedPin      = "14";
 GPIO5.associatedPins[3].pin.$assign      = "PA14";
 
+GPIO6.$name                              = "GPIO_BTN";
+GPIO6.associatedPins.create(2);
+GPIO6.associatedPins[0].direction        = "INPUT";
+GPIO6.associatedPins[0].assignedPort     = "PORTB";
+GPIO6.associatedPins[0].assignedPin      = "1";
+GPIO6.associatedPins[0].$name            = "PIN_STATUS";
+GPIO6.associatedPins[1].assignedPort     = "PORTB";
+GPIO6.associatedPins[1].assignedPin      = "21";
+GPIO6.associatedPins[1].$name            = "PIN_TASK";
+GPIO6.associatedPins[1].internalResistor = "PULL_UP";
+GPIO6.associatedPins[1].direction        = "INPUT";
+
+GPIO7.$name                          = "GPIO_LED";
+GPIO7.associatedPins.create(3);
+GPIO7.associatedPins[0].$name        = "PIN_BLUE";
+GPIO7.associatedPins[0].assignedPort = "PORTB";
+GPIO7.associatedPins[0].assignedPin  = "22";
+GPIO7.associatedPins[1].assignedPort = "PORTB";
+GPIO7.associatedPins[1].assignedPin  = "26";
+GPIO7.associatedPins[1].$name        = "PIN_RED";
+GPIO7.associatedPins[2].assignedPort = "PORTB";
+GPIO7.associatedPins[2].assignedPin  = "27";
+GPIO7.associatedPins[2].$name        = "PIN_GREEN";
+
 I2C1.$name                             = "I2C_MPU6050";
 I2C1.basicEnableController             = true;
 I2C1.basicControllerStandardBusSpeed   = "Fast";
@@ -229,9 +255,16 @@ UART1.peripheral.txPin.$assign = "PA10";
 UART1.txPinConfig.$name        = "ti_driverlib_gpio_GPIOPinGeneric2";
 UART1.rxPinConfig.$name        = "ti_driverlib_gpio_GPIOPinGeneric3";
 
-UART2.$name             = "UART_1";
-UART2.txPinConfig.$name = "ti_driverlib_gpio_GPIOPinGeneric6";
-UART2.rxPinConfig.$name = "ti_driverlib_gpio_GPIOPinGeneric7";
+UART2.$name                            = "UART_OPENMV";
+UART2.txPinConfig.direction            = scripting.forceWrite("OUTPUT");
+UART2.txPinConfig.hideOutputInversion  = scripting.forceWrite(false);
+UART2.txPinConfig.onlyInternalResistor = scripting.forceWrite(false);
+UART2.txPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
+UART2.txPinConfig.$name                = "ti_driverlib_gpio_GPIOPinGeneric6";
+UART2.rxPinConfig.hideOutputInversion  = scripting.forceWrite(false);
+UART2.rxPinConfig.onlyInternalResistor = scripting.forceWrite(false);
+UART2.rxPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
+UART2.rxPinConfig.$name                = "ti_driverlib_gpio_GPIOPinGeneric7";
 
 /**
  * Pinmux solution for unlocked pins/peripherals. This ensures that minor changes to the automatic solver in a future
@@ -256,6 +289,11 @@ GPIO4.associatedPins[0].pin.$suggestSolution = "PB18";
 GPIO4.associatedPins[1].pin.$suggestSolution = "PA18";
 GPIO4.associatedPins[2].pin.$suggestSolution = "PA24";
 GPIO4.associatedPins[3].pin.$suggestSolution = "PA17";
+GPIO6.associatedPins[0].pin.$suggestSolution = "PB1";
+GPIO6.associatedPins[1].pin.$suggestSolution = "PB21";
+GPIO7.associatedPins[0].pin.$suggestSolution = "PB22";
+GPIO7.associatedPins[1].pin.$suggestSolution = "PB26";
+GPIO7.associatedPins[2].pin.$suggestSolution = "PB27";
 I2C1.peripheral.$suggestSolution             = "I2C0";
 I2C2.peripheral.$suggestSolution             = "I2C1";
 SYSCTL.peripheral.$suggestSolution           = "SYSCTL";

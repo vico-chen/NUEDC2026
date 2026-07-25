@@ -36,7 +36,8 @@
 #include "mpu6050_angle.h"
 #include "angle_turn_control.h"
 #include "grayscale_sensor.h"
-#include "oled_test.h"
+#include "oled.h"
+#include "task_manager.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -221,6 +222,7 @@ static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
 static volatile bool gMpu6050SampleDue;
 static bool gMpu6050Ready;
+static bool gOledReady;
 static bool gGrayscaleStreamEnabled;
 static uint8_t gGrayscaleStreamDivider;
 
@@ -237,6 +239,13 @@ static bool gLineFilterReady;
 
 static bool gMotorStatusStreamEnabled;
 static bool gMotorStatusReportOnce;
+
+static void OLED_showCalibrationProgress(uint8_t secondsRemaining)
+{
+    if (gOledReady) {
+        gOledReady = OLED_ShowCalibration(secondsRemaining);
+    }
+}
 
 static void UART_sendString(const char *text)
 {
@@ -1316,11 +1325,9 @@ static void Car_processUartCommand(void)
 
 int main(void)
 {
-    bool oledReady;
-
     SYSCFG_DL_init();
 
-    oledReady = OLED_Test_initAndShowHelloWorld();
+    gOledReady = OLED_Init();
 
     /*
      * Wheel map: A right-rear, B right-front, C left-front, D left-rear.
@@ -1342,11 +1349,12 @@ int main(void)
     LineTracking_resetPid();
 
     UART_printBanner();
-    UART_sendString(oledReady ? "OLED: Hello World displayed.\r\n"
-                              : "OLED init failed: check I2C address/wiring.\r\n");
+    UART_sendString(gOledReady ? "OLED ready.\r\n"
+                               : "OLED init failed: check I2C address/wiring.\r\n");
     UART_sendString(
         "MPU6050: keep car still for 5 seconds (calibrating)...\r\n");
-    gMpu6050Ready = MPU6050_Angle_init();
+    gMpu6050Ready = MPU6050_Angle_initWithProgress(
+        OLED_showCalibrationProgress);
     if (gMpu6050Ready) {
         UART_sendString("MPU6050 ready, WHO_AM_I=0x");
         UART_sendHex8((uint8_t) MPU6050_Angle_getDeviceId());
@@ -1354,6 +1362,7 @@ int main(void)
     } else {
         UART_sendString("MPU6050 init failed.\r\n");
     }
+    TaskManager_init(gOledReady);
     UART_sendString(
         "GRAYSCALE OK  AD0=PB11 AD1=PB5 AD2=PA1 OUT=PA14\r\n");
     UART_sendString("Ready. Send H for commands.\r\n");
@@ -1409,6 +1418,8 @@ int main(void)
             if (gLineTrackingEnabled) {
                 LineTracking_update();
             }
+
+            TaskManager_update();
         }
 
         if (gUartCommandReady) {

@@ -8,8 +8,13 @@
 #define MPU6050_ANGLE_H_
 
 #include <stdbool.h>
+#include <stdint.h>
+
+typedef void (*MPU6050_CalibrationProgressCallback)(uint8_t secondsRemaining);
 
 bool MPU6050_Angle_init(void);
+bool MPU6050_Angle_initWithProgress(
+    MPU6050_CalibrationProgressCallback progressCallback);
 bool MPU6050_Angle_update(void);
 void MPU6050_Angle_reset(void);
 float MPU6050_Angle_getZDegrees(void);

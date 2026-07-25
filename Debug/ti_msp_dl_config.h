@@ -280,6 +280,27 @@ extern "C" {
 #define GPIO_GRAYSCALE_OUT_PORT                                          (GPIOA)
 #define GPIO_GRAYSCALE_OUT_PIN                                  (DL_GPIO_PIN_14)
 #define GPIO_GRAYSCALE_OUT_IOMUX                                 (IOMUX_PINCM36)
+/* Port definition for Pin Group GPIO_BTN */
+#define GPIO_BTN_PORT                                                    (GPIOB)
+
+/* Defines for PIN_STATUS: GPIOB.1 with pinCMx 13 on package pin 48 */
+#define GPIO_BTN_PIN_STATUS_PIN                                  (DL_GPIO_PIN_1)
+#define GPIO_BTN_PIN_STATUS_IOMUX                                (IOMUX_PINCM13)
+/* Defines for PIN_TASK: GPIOB.21 with pinCMx 49 on package pin 20 */
+#define GPIO_BTN_PIN_TASK_PIN                                   (DL_GPIO_PIN_21)
+#define GPIO_BTN_PIN_TASK_IOMUX                                  (IOMUX_PINCM49)
+/* Port definition for Pin Group GPIO_LED */
+#define GPIO_LED_PORT                                                    (GPIOB)
+
+/* Defines for PIN_BLUE: GPIOB.22 with pinCMx 50 on package pin 21 */
+#define GPIO_LED_PIN_BLUE_PIN                                   (DL_GPIO_PIN_22)
+#define GPIO_LED_PIN_BLUE_IOMUX                                  (IOMUX_PINCM50)
+/* Defines for PIN_RED: GPIOB.26 with pinCMx 57 on package pin 28 */
+#define GPIO_LED_PIN_RED_PIN                                    (DL_GPIO_PIN_26)
+#define GPIO_LED_PIN_RED_IOMUX                                   (IOMUX_PINCM57)
+/* Defines for PIN_GREEN: GPIOB.27 with pinCMx 58 on package pin 29 */
+#define GPIO_LED_PIN_GREEN_PIN                                  (DL_GPIO_PIN_27)
+#define GPIO_LED_PIN_GREEN_IOMUX                                 (IOMUX_PINCM58)
 
 
 /* clang-format on */

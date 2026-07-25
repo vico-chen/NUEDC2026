@@ -17,7 +17,8 @@ C_SRCS += \
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c \
 ../motor_control.c \
 ../mpu6050_angle.c \
-../oled_test.c 
+../oled.c \
+../task_manager.c 
 
 GEN_CMDS += \
 ./device_linker.cmd 
@@ -36,7 +37,8 @@ C_DEPS += \
 ./startup_mspm0g350x_ticlang.d \
 ./motor_control.d \
 ./mpu6050_angle.d \
-./oled_test.d 
+./oled.d \
+./task_manager.d 
 
 GEN_OPTS += \
 ./device.opt 
@@ -50,7 +52,8 @@ OBJS += \
 ./startup_mspm0g350x_ticlang.o \
 ./motor_control.o \
 ./mpu6050_angle.o \
-./oled_test.o 
+./oled.o \
+./task_manager.o 
 
 GEN_MISC_FILES += \
 ./device.cmd.genlibs \
@@ -66,7 +69,8 @@ OBJS__QUOTED += \
 "startup_mspm0g350x_ticlang.o" \
 "motor_control.o" \
 "mpu6050_angle.o" \
-"oled_test.o" 
+"oled.o" \
+"task_manager.o" 
 
 GEN_MISC_FILES__QUOTED += \
 "device.cmd.genlibs" \
@@ -82,7 +86,8 @@ C_DEPS__QUOTED += \
 "startup_mspm0g350x_ticlang.d" \
 "motor_control.d" \
 "mpu6050_angle.d" \
-"oled_test.d" 
+"oled.d" \
+"task_manager.d" 
 
 GEN_FILES__QUOTED += \
 "device_linker.cmd" \
@@ -98,7 +103,8 @@ C_SRCS__QUOTED += \
 "C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" \
 "../motor_control.c" \
 "../mpu6050_angle.c" \
-"../oled_test.c" 
+"../oled.c" \
+"../task_manager.c" 
 
 SYSCFG_SRCS__QUOTED += \
 "../main.syscfg" 
