@@ -66,6 +66,7 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
     int32_t measuredCountsPerSample, int16_t targetRpm)
 {
     int8_t requestedDirection;
+    int8_t measuredDirection;
     uint16_t targetMagnitudeRpm;
     int32_t measuredMagnitude;
     float targetCountsPerSample;
@@ -81,9 +82,10 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
             return 0;
         }
 
+        /* Stop-mode has its own controller; do not carry speed PID state in. */
         if (motor->pidDirection != 0) {
-            motor->zeroBrakeDirection = -motor->pidDirection;
             motor->pidDirection = 0;
+            motor->zeroBrakeDirection = 0;
             MotorControl_resetPid(motor);
         }
 
@@ -91,11 +93,21 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
             -measuredCountsPerSample : measuredCountsPerSample;
 
         if ((measuredMagnitude <=
-                motor->config.zeroSpeedDeadbandCounts) ||
-            (motor->zeroBrakeDirection == 0)) {
+                motor->config.zeroSpeedDeadbandCounts)) {
             MotorControl_resetPid(motor);
             motor->zeroBrakeDirection = 0;
             return 0;
+        }
+
+        /*
+         * Brake against the signed encoder velocity, never against the last
+         * requested direction. This remains correct for mirrored motors and
+         * after a direction reversal.
+         */
+        measuredDirection = (measuredCountsPerSample > 0) ? 1 : -1;
+        if (measuredDirection != motor->zeroBrakeDirection) {
+            motor->zeroBrakeDirection = measuredDirection;
+            MotorControl_resetPid(motor);
         }
 
         error = -(float) measuredMagnitude;
@@ -118,7 +130,7 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
         motor->pidPreviousError = motor->pidLastError;
         motor->pidLastError = error;
 
-        return (int16_t) (motor->zeroBrakeDirection *
+        return (int16_t) (-motor->zeroBrakeDirection *
             (int16_t) ((-motor->pidOutput) + 0.5f));
     }
 
@@ -191,6 +203,16 @@ void MotorControl_coast(MotorControl *motor)
     motor->pidDirection = 0;
     MotorControl_resetPid(motor);
     MotorControl_applyOutput(motor, 0);
+}
+
+bool MotorControl_isStopped(const MotorControl *motor)
+{
+    int32_t magnitude = motor->speedCountsPerSample;
+
+    if (magnitude < 0) {
+        magnitude = -magnitude;
+    }
+    return magnitude <= motor->config.zeroSpeedDeadbandCounts;
 }
 
 void MotorControl_handleEncoderEdge(MotorControl *motor)

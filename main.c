@@ -61,6 +61,12 @@
 #define LINE_DEBUG_PRINT_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
 /* Debounce: require this many equal samples before accepting a bit flip. */
 #define LINE_SENSOR_DEBOUNCE_SAMPLES (2U)
+#define LINE_INTERSECTION_ACTIVE_CHANNEL_THRESHOLD (6U)
+#define LINE_INTERSECTION_PARTIAL_CONFIRM_SAMPLES (2U)
+#define LINE_INTERSECTION_STOP_HOLD_SAMPLES (15U)
+#define LINE_INTERSECTION_BRAKE_TIMEOUT_SAMPLES (80U)
+#define LINE_INTERSECTION_LEFT_TURN_DEGREES (75.0f)
+#define LINE_INTERSECTION_TURN_RPM (80)
 
 /*
  * Wheel layout:
@@ -234,6 +240,17 @@ static uint8_t gLineFilteredValues[GRAYSCALE_SENSOR_CHANNELS];
 static uint8_t gLinePendingValues[GRAYSCALE_SENSOR_CHANNELS];
 static uint8_t gLinePendingCount[GRAYSCALE_SENSOR_CHANNELS];
 static bool gLineFilterReady;
+
+typedef enum {
+    LINE_INTERSECTION_FOLLOW,
+    LINE_INTERSECTION_STOP_HOLD,
+    LINE_INTERSECTION_TURNING,
+    LINE_INTERSECTION_EXIT_LOCK
+} LineIntersectionState;
+
+static LineIntersectionState gLineIntersectionState;
+static uint8_t gLineIntersectionStopHoldCount;
+static uint8_t gLineIntersectionCandidateCount;
 
 static bool gMotorStatusStreamEnabled;
 static bool gMotorStatusReportOnce;
@@ -479,6 +496,89 @@ static void LineTracking_resetPid(void)
     }
 }
 
+static void LineTracking_resetIntersection(void)
+{
+    gLineIntersectionState = LINE_INTERSECTION_FOLLOW;
+    gLineIntersectionStopHoldCount = 0U;
+    gLineIntersectionCandidateCount = 0U;
+}
+
+static uint8_t LineTracking_countActiveChannels(
+    const uint8_t values[GRAYSCALE_SENSOR_CHANNELS])
+{
+    uint8_t i;
+    uint8_t activeCount = 0U;
+
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
+            activeCount++;
+        }
+    }
+    return activeCount;
+}
+
+static void LineTracking_latchIntersection(void)
+{
+    if (gLineIntersectionState != LINE_INTERSECTION_FOLLOW) {
+        return;
+    }
+
+    /*
+     * Every channel has already passed the driver's 3-sample majority vote.
+     * An all-eight match is therefore strong evidence of a cross and must be
+     * latched immediately; waiting for line-PID debounce loses it at speed.
+     */
+    gLineIntersectionState = LINE_INTERSECTION_STOP_HOLD;
+    gLineIntersectionStopHoldCount = 0U;
+    gLineIntersectionCandidateCount = 0U;
+    LineTracking_resetPid();
+    CarControl_stop(&gCar);
+    UART_sendString("INTERSECTION_DETECTED_BRAKING\r\n");
+}
+
+static void LineTracking_considerIntersection(
+    const uint8_t values[GRAYSCALE_SENSOR_CHANNELS])
+{
+    uint8_t activeCount = LineTracking_countActiveChannels(values);
+
+    if (activeCount == GRAYSCALE_SENSOR_CHANNELS) {
+        /* Full eight-channel crossing: highest confidence, latch at once. */
+        LineTracking_latchIntersection();
+        return;
+    }
+
+    /*
+     * The CD4051 reads X1..X8 sequentially. At speed a cross often spans
+     * only six or seven samples in one scan; require two adjacent fast scans
+     * for this partial-cross fallback to reject isolated noise.
+     */
+    if (activeCount >= LINE_INTERSECTION_ACTIVE_CHANNEL_THRESHOLD) {
+        if (gLineIntersectionCandidateCount < 255U) {
+            gLineIntersectionCandidateCount++;
+        }
+        if (gLineIntersectionCandidateCount >=
+            LINE_INTERSECTION_PARTIAL_CONFIRM_SAMPLES) {
+            LineTracking_latchIntersection();
+        }
+    } else {
+        gLineIntersectionCandidateCount = 0U;
+    }
+}
+
+static void LineTracking_pollIntersection(void)
+{
+    uint8_t rawValues[GRAYSCALE_SENSOR_CHANNELS];
+
+    if (!gLineTrackingEnabled ||
+        (gLineIntersectionState != LINE_INTERSECTION_FOLLOW)) {
+        return;
+    }
+
+    /* Foreground polling runs between 10 ms PID updates for fast crossings. */
+    Grayscale_Sensor_ReadAll(rawValues);
+    LineTracking_considerIntersection(rawValues);
+}
+
 /*
  * Debounce digital chatter (especially X4/X5 on the line edge).
  * A channel value only flips after N identical new samples in a row.
@@ -629,10 +729,75 @@ static void LineTracking_update(void)
     int16_t pidOffsetRpm;
     uint8_t activeCount = 0U;
     uint8_t i;
+    bool intersectionDetected;
 
     /* Read sensors (X1..X8), then debounce chatter. */
     Grayscale_Sensor_ReadAll(rawValues);
     LineTracking_filterSensors(rawValues, values);
+    /* Do not wait for the line controller's 2-sample debounce at a cross. */
+    intersectionDetected =
+        (LineTracking_countActiveChannels(rawValues) >=
+            LINE_INTERSECTION_ACTIVE_CHANNEL_THRESHOLD) ||
+        (LineTracking_countActiveChannels(values) >=
+            LINE_INTERSECTION_ACTIVE_CHANNEL_THRESHOLD);
+
+    if (gLineIntersectionState == LINE_INTERSECTION_STOP_HOLD) {
+        /* Encoder PID brakes each wheel until it has actually stopped. */
+        CarControl_stop(&gCar);
+        if (gLineIntersectionStopHoldCount < 255U) {
+            gLineIntersectionStopHoldCount++;
+        }
+        if ((gLineIntersectionStopHoldCount <
+                LINE_INTERSECTION_STOP_HOLD_SAMPLES) ||
+            !CarControl_isStopped(&gCar)) {
+            if (gLineIntersectionStopHoldCount >=
+                LINE_INTERSECTION_BRAKE_TIMEOUT_SAMPLES) {
+                CarControl_emergencyStop(&gCar);
+                gLineTrackingEnabled = false;
+                UART_sendString("INTERSECTION_BRAKE_TIMEOUT\r\n");
+            }
+            return;
+        }
+
+        if (!gMpu6050Ready || !AngleTurnControl_start(&gAngleTurn, true,
+                LINE_INTERSECTION_LEFT_TURN_DEGREES,
+                LINE_INTERSECTION_TURN_RPM)) {
+            CarControl_emergencyStop(&gCar);
+            gLineTrackingEnabled = false;
+            UART_sendString("INTERSECTION_TURN_START_FAILED\r\n");
+            return;
+        }
+
+        gLineIntersectionState = LINE_INTERSECTION_TURNING;
+        UART_sendString("INTERSECTION_LEFT_TURN_STARTED\r\n");
+        return;
+    }
+
+    if (gLineIntersectionState == LINE_INTERSECTION_TURNING) {
+        /* AngleTurnControl owns the motors until it reports a result. */
+        return;
+    }
+
+    if (gLineIntersectionState == LINE_INTERSECTION_EXIT_LOCK) {
+        /* Do not trigger repeatedly while still on the same crossing. */
+        if (intersectionDetected) {
+            CarControl_emergencyStop(&gCar);
+            return;
+        }
+        gLineIntersectionState = LINE_INTERSECTION_FOLLOW;
+        LineTracking_resetPid();
+        UART_sendString("INTERSECTION_EXITED_LINE_RESUMED\r\n");
+    }
+
+    if (intersectionDetected) {
+        LineTracking_considerIntersection(rawValues);
+        if (gLineIntersectionState != LINE_INTERSECTION_FOLLOW) {
+            return;
+        }
+        /* A filtered-only partial sample is not enough without fast evidence. */
+        return;
+    }
+
     for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
         if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
             activeCount++;
@@ -962,6 +1127,7 @@ static void Car_processUartCommand(void)
         gLineTrackingEnabled = false;
         gLineTrackingDebugEnabled = false;
         LineTracking_resetPid();
+        LineTracking_resetIntersection();
     }
 
     if ((command == 'F') || (command == 'B') || (command == 'T')) {
@@ -983,6 +1149,7 @@ static void Car_processUartCommand(void)
         gLineTrackingEnabled = false;
         gLineTrackingDebugEnabled = false;
         LineTracking_resetPid();
+        LineTracking_resetIntersection();
         UART_sendString("STOPPED\r\n");
         return;
     }
@@ -1030,6 +1197,7 @@ static void Car_processUartCommand(void)
                 gLineTrackingEnabled = false;
                 gLineTrackingDebugEnabled = false;
                 LineTracking_resetPid();
+                LineTracking_resetIntersection();
                 CarControl_stop(&gCar);
                 UART_sendString("LINE_STOPPED\r\n");
                 return;
@@ -1055,6 +1223,7 @@ static void Car_processUartCommand(void)
         gLineTrackingEnabled = true;
         gLineTrackingDebugEnabled = debug;
         LineTracking_resetPid();
+        LineTracking_resetIntersection();
         AngleTurnControl_cancel(&gAngleTurn);
         CarControl_stop(&gCar);
 
@@ -1340,6 +1509,7 @@ int main(void)
     gLineTrackingDebugEnabled = false;
     gLineTrackingBaseSpeedRpm = CAR_DEFAULT_SPEED_RPM;
     LineTracking_resetPid();
+    LineTracking_resetIntersection();
 
     UART_printBanner();
     UART_sendString(oledReady ? "OLED: Hello World displayed.\r\n"
@@ -1389,12 +1559,28 @@ int main(void)
             if (angleTurnResult == ANGLE_TURN_RESULT_COMPLETED) {
                 UART_sendString("ANGLE_TURN_DONE ");
                 UART_reportZAngle();
+                if (gLineIntersectionState == LINE_INTERSECTION_TURNING) {
+                    gLineIntersectionState = LINE_INTERSECTION_EXIT_LOCK;
+                    UART_sendString("INTERSECTION_TURN_DONE\r\n");
+                }
             } else if (angleTurnResult == ANGLE_TURN_RESULT_TIMEOUT) {
                 UART_sendString("ANGLE_TURN_TIMEOUT ");
                 UART_reportZAngle();
+                if (gLineIntersectionState == LINE_INTERSECTION_TURNING) {
+                    CarControl_emergencyStop(&gCar);
+                    gLineTrackingEnabled = false;
+                    LineTracking_resetIntersection();
+                    UART_sendString("INTERSECTION_TURN_ABORTED\r\n");
+                }
             } else if (angleTurnResult == ANGLE_TURN_RESULT_FAULT) {
                 UART_sendString(
                     "ANGLE_TURN_FAULT check ANGLE_TURN_LEFT_YAW_SIGN\r\n");
+                if (gLineIntersectionState == LINE_INTERSECTION_TURNING) {
+                    CarControl_emergencyStop(&gCar);
+                    gLineTrackingEnabled = false;
+                    LineTracking_resetIntersection();
+                    UART_sendString("INTERSECTION_TURN_ABORTED\r\n");
+                }
             }
 
             if (gGrayscaleStreamEnabled) {
@@ -1417,6 +1603,17 @@ int main(void)
         }
 
         UART_serviceMotorStatus();
+
+        if (gLineTrackingEnabled &&
+            (gLineIntersectionState == LINE_INTERSECTION_FOLLOW)) {
+            /*
+             * A cross can be narrower than one 10 ms line-control period at
+             * speed. Poll it continuously; timer interrupts still run PID,
+             * encoder, IMU, and UART service at their configured rates.
+             */
+            LineTracking_pollIntersection();
+            continue;
+        }
         __WFI();
     }
 }

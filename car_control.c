@@ -45,6 +45,14 @@ void CarControl_coast(CarControl *car)
     MotorControl_coast(car->config.leftRearMotor);
 }
 
+bool CarControl_isStopped(const CarControl *car)
+{
+    return MotorControl_isStopped(car->config.rightRearMotor) &&
+           MotorControl_isStopped(car->config.rightFrontMotor) &&
+           MotorControl_isStopped(car->config.leftFrontMotor) &&
+           MotorControl_isStopped(car->config.leftRearMotor);
+}
+
 void CarControl_setMotion(CarControl *car, CarControl_Motion motion,
     int16_t speedRpm, uint8_t turnInnerPercent)
 {
