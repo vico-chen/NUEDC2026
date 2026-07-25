@@ -19,5 +19,7 @@ void TaskManager_init(bool oledReady);
 void TaskManager_update(void);
 TaskManager_Task TaskManager_getActiveTask(void);
 TaskManager_Task1Endpoint TaskManager_getTask1Endpoint(void);
+/* Returns true exactly once for each debounced, low-active PIN_STATUS press. */
+bool TaskManager_takeStatusPressed(void);
 
 #endif /* TASK_MANAGER_H_ */

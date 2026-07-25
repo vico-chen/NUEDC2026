@@ -16,6 +16,8 @@ static TaskManager_Task1Endpoint gTask1Endpoint;
 static bool gOledReady;
 static TaskManager_ButtonState gTaskButton;
 static TaskManager_ButtonState gTask1EndpointButton;
+static TaskManager_ButtonState gStatusButton;
+static bool gStatusPressPending;
 
 static bool TaskManager_readButtonPressed(void)
 {
@@ -29,6 +31,13 @@ static bool TaskManager_readTask1EndpointButtonPressed(void)
     /* S1 connects PA18 to 3.3 V when pressed; R14 pulls it down when idle. */
     return (DL_GPIO_readPins(GPIO_BTN_PIN_TASK1_CHANGE_PORT,
         GPIO_BTN_PIN_TASK1_CHANGE_PIN) != 0U);
+}
+
+static bool TaskManager_readStatusButtonPressed(void)
+{
+    /* PB1 is low-active: the load-complete switch connects it to GND. */
+    return (DL_GPIO_readPins(GPIO_BTN_PIN_STATUS_PORT,
+        GPIO_BTN_PIN_STATUS_PIN) == 0U);
 }
 
 /* Returns true once for each debounced press, never while the key is held. */
@@ -90,7 +99,10 @@ static void TaskManager_toggleTask1Endpoint(void)
 
 void TaskManager_init(bool oledReady)
 {
-    /* PB21 is low-active; PA18 is high-active on the LaunchPad. */
+    /* PB1/PB21 are low-active; PA18 is high-active on the LaunchPad. */
+    DL_GPIO_initDigitalInputFeatures(GPIO_BTN_PIN_STATUS_IOMUX,
+        DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
+        DL_GPIO_HYSTERESIS_ENABLE, DL_GPIO_WAKEUP_DISABLE);
     DL_GPIO_initDigitalInputFeatures(GPIO_BTN_PIN_TASK_IOMUX,
         DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
         DL_GPIO_HYSTERESIS_ENABLE, DL_GPIO_WAKEUP_DISABLE);
@@ -108,6 +120,10 @@ void TaskManager_init(bool oledReady)
         TaskManager_readTask1EndpointButtonPressed();
     gTask1EndpointButton.stablePressed = gTask1EndpointButton.rawPressed;
     gTask1EndpointButton.debounceCount = 0U;
+    gStatusButton.rawPressed = TaskManager_readStatusButtonPressed();
+    gStatusButton.stablePressed = gStatusButton.rawPressed;
+    gStatusButton.debounceCount = 0U;
+    gStatusPressPending = false;
     TaskManager_showActiveTask();
 }
 
@@ -122,6 +138,11 @@ void TaskManager_update(void)
             TaskManager_readTask1EndpointButtonPressed())) {
         TaskManager_toggleTask1Endpoint();
     }
+
+    if (TaskManager_updateButton(
+            &gStatusButton, TaskManager_readStatusButtonPressed())) {
+        gStatusPressPending = true;
+    }
 }
 
 TaskManager_Task TaskManager_getActiveTask(void)
@@ -132,4 +153,12 @@ TaskManager_Task TaskManager_getActiveTask(void)
 TaskManager_Task1Endpoint TaskManager_getTask1Endpoint(void)
 {
     return gTask1Endpoint;
+}
+
+bool TaskManager_takeStatusPressed(void)
+{
+    bool pressed = gStatusPressPending;
+
+    gStatusPressPending = false;
+    return pressed;
 }

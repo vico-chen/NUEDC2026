@@ -82,7 +82,6 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
         }
 
         if (motor->pidDirection != 0) {
-            motor->zeroBrakeDirection = -motor->pidDirection;
             motor->pidDirection = 0;
             MotorControl_resetPid(motor);
         }
@@ -90,13 +89,14 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
         measuredMagnitude = (measuredCountsPerSample < 0) ?
             -measuredCountsPerSample : measuredCountsPerSample;
 
-        if ((measuredMagnitude <=
-                motor->config.zeroSpeedDeadbandCounts) ||
-            (motor->zeroBrakeDirection == 0)) {
+        if (measuredMagnitude <= motor->config.zeroSpeedDeadbandCounts) {
             MotorControl_resetPid(motor);
             motor->zeroBrakeDirection = 0;
             return 0;
         }
+
+        /* Brake opposite to the measured encoder direction, never a stale command. */
+        motor->zeroBrakeDirection = (measuredCountsPerSample > 0) ? -1 : 1;
 
         error = -(float) measuredMagnitude;
         increment =

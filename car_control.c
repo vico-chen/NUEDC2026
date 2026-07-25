@@ -104,6 +104,7 @@ void CarControl_setMotion(CarControl *car, CarControl_Motion motion,
     }
 }
 
+
 int16_t CarControl_getSpeedRpm(const CarControl *car)
 {
     return car->speedRpm;
