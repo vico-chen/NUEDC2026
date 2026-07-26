@@ -239,22 +239,22 @@ static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
 static volatile bool gMpu6050SampleDue;
-static volatile bool gOpenMvNumberPending;
+static volatile bool gOpenMvTask2NumberPending;
+static volatile bool gOpenMvTask3NumberPending;
+static volatile bool gOpenMvNumberValid;
 static volatile uint8_t gOpenMvNumber;
 static volatile Task2Control_Turn gOpenMvTurnPending;
 static volatile uint8_t gOpenMvDisplayPending;
 static uint8_t gOpenMvLastDisplayed;
 static uint8_t gOpenMvLastDisplayedTask;
 
-/*
- * TEMPORARY OPENMV UART0 ECHO TEST
- * Remove this buffer and OpenMvDebug_service() after communication testing.
- */
+/* OpenMV UART1 receive monitor, controlled by UART0 commands O/O1/O0. */
 static volatile uint8_t
     gOpenMvDebugRxBuffer[OPENMV_DEBUG_RX_BUFFER_SIZE];
 static volatile uint8_t gOpenMvDebugRxHead;
 static volatile uint8_t gOpenMvDebugRxTail;
 static volatile bool gOpenMvDebugRxOverflow;
+static volatile bool gOpenMvDebugEnabled;
 static bool gMpu6050Ready;
 static bool gOledReady;
 static bool gGrayscaleStreamEnabled;
@@ -391,6 +391,7 @@ static void UART_printHelp(void)
     UART_sendString("  Y / Y0      yaw read / reset\r\n");
     UART_sendString("  G / G1 / G0 grayscale once/stream/off\r\n");
     UART_sendString("  M / M1 / M0 motor status once/stream/off\r\n");
+    UART_sendString("  O / O1 / O0 OpenMV RX status/on/off\r\n");
     UART_sendString("  H or ?      this help\r\n");
     UART_sendString("=====================================\r\n");
 }
@@ -778,13 +779,16 @@ static void Task1_lineTrackingSetEnabled(bool enabled)
 }
 
 /*
- * TEMPORARY OPENMV UART0 ECHO TEST
- * Print at most one received byte per main-loop pass so diagnostic output
- * cannot occupy the foreground indefinitely when OpenMV sends continuously.
+ * Print at most one monitored OpenMV byte per main-loop pass so UART0
+ * diagnostics cannot occupy the foreground indefinitely.
  */
 static void OpenMvDebug_service(void)
 {
     uint8_t serviced = 0U;
+
+    if (!gOpenMvDebugEnabled) {
+        return;
+    }
 
     if (gOpenMvDebugRxOverflow) {
         gOpenMvDebugRxOverflow = false;
@@ -1585,6 +1589,60 @@ static void Car_processUartCommand(void)
         }
         return;
     }
+    if (command == 'O') {
+        char option;
+
+        while ((gUartCommand[index] == ' ') ||
+               (gUartCommand[index] == '\t')) {
+            index++;
+        }
+        option = gUartCommand[index];
+
+        if (option == '\0') {
+            UART_sendString(gOpenMvDebugEnabled ?
+                "OPENMV_DEBUG_ON\r\n" :
+                "OPENMV_DEBUG_OFF\r\n");
+            return;
+        }
+
+        if ((option != '0') && (option != '1')) {
+            UART_sendString(
+                "O_FORMAT_ERROR usage: O | O1 | O0\r\n");
+            UART_hintHelp();
+            return;
+        }
+        index++;
+        while ((gUartCommand[index] == ' ') ||
+               (gUartCommand[index] == '\t')) {
+            index++;
+        }
+        if (gUartCommand[index] != '\0') {
+            UART_sendString(
+                "O_FORMAT_ERROR usage: O | O1 | O0\r\n");
+            UART_hintHelp();
+            return;
+        }
+
+        if (option == '1') {
+            /*
+             * Reset the single-producer/single-consumer queue before
+             * enabling the UART1 ISR producer.
+             */
+            gOpenMvDebugRxHead = 0U;
+            gOpenMvDebugRxTail = 0U;
+            gOpenMvDebugRxOverflow = false;
+            gOpenMvDebugEnabled = true;
+            UART_sendString("OPENMV_DEBUG_ON\r\n");
+        } else {
+            /* Stop ISR writes before clearing the queue. */
+            gOpenMvDebugEnabled = false;
+            gOpenMvDebugRxHead = 0U;
+            gOpenMvDebugRxTail = 0U;
+            gOpenMvDebugRxOverflow = false;
+            UART_sendString("OPENMV_DEBUG_OFF\r\n");
+        }
+        return;
+    }
     if (command == 'Y') {
         while ((gUartCommand[index] == ' ') ||
                (gUartCommand[index] == '\t')) {
@@ -1815,6 +1873,14 @@ int main(void)
 {
     SYSCFG_DL_init();
 
+    /*
+     * OpenMV may send its initial digit immediately after power-up. Enable
+     * UART1 RX before the OLED setup and 5-second MPU calibration so that
+     * this one-shot result is not lost.
+     */
+    NVIC_ClearPendingIRQ(UART_OPENMV_INST_INT_IRQN);
+    NVIC_EnableIRQ(UART_OPENMV_INST_INT_IRQN);
+
     gOledReady = OLED_Init();
 
     /*
@@ -1873,8 +1939,6 @@ int main(void)
 
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);
-    NVIC_ClearPendingIRQ(UART_OPENMV_INST_INT_IRQN);
-    NVIC_EnableIRQ(UART_OPENMV_INST_INT_IRQN);
     NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
     NVIC_EnableIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
     NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOA_INT_IRQN);
@@ -1930,17 +1994,27 @@ int main(void)
                     TaskManager_takeStatusPressed();
                 bool statusReleased =
                     TaskManager_takeStatusReleased();
-                bool numberReceived = gOpenMvNumberPending;
+                bool task2NumberReceived =
+                    (activeTask == TASK_MANAGER_TASK_2) &&
+                    gOpenMvTask2NumberPending;
+                bool task3NumberReceived =
+                    (activeTask == TASK_MANAGER_TASK_3) &&
+                    gOpenMvTask3NumberPending;
                 Task2Control_Turn visualTurn = gOpenMvTurnPending;
 
-                gOpenMvNumberPending = false;
+                if (task2NumberReceived) {
+                    gOpenMvTask2NumberPending = false;
+                }
+                if (task3NumberReceived) {
+                    gOpenMvTask3NumberPending = false;
+                }
                 gOpenMvTurnPending = TASK2_TURN_NONE;
                 Task2Control_update(&gTask2Control,
                     activeTask, statusPressed, statusReleased,
-                    numberReceived,
+                    task2NumberReceived,
                     visualTurn, gMpu6050Ready, angleTurnResult);
                 Task3Control_update(&gTask3Control,
-                    activeTask, statusPressed, numberReceived,
+                    activeTask, statusPressed, task3NumberReceived,
                     visualTurn, gMpu6050Ready, angleTurnResult);
             }
 
@@ -1956,6 +2030,14 @@ int main(void)
                 gOpenMvLastDisplayed = 0U;
                 gOpenMvLastDisplayedTask =
                     (uint8_t) TaskManager_getActiveTask();
+                if (gOpenMvNumberValid &&
+                    ((TaskManager_getActiveTask() ==
+                        TASK_MANAGER_TASK_2) ||
+                     (TaskManager_getActiveTask() ==
+                        TASK_MANAGER_TASK_3))) {
+                    gOpenMvDisplayPending = (uint8_t)
+                        ((uint8_t) '0' + gOpenMvNumber);
+                }
             }
         }
 
@@ -2088,19 +2170,28 @@ void UART_OPENMV_INST_IRQHandler(void)
     }
     rxData = DL_UART_Main_receiveData(UART_OPENMV_INST);
 
-    /* TEMPORARY OPENMV UART0 ECHO TEST: enqueue without blocking in ISR. */
-    nextHead = (uint8_t) ((gOpenMvDebugRxHead + 1U) &
-        (OPENMV_DEBUG_RX_BUFFER_SIZE - 1U));
-    if (nextHead != gOpenMvDebugRxTail) {
-        gOpenMvDebugRxBuffer[gOpenMvDebugRxHead] = rxData;
-        gOpenMvDebugRxHead = nextHead;
-    } else {
-        gOpenMvDebugRxOverflow = true;
+    /* O1 monitor: enqueue without blocking inside the UART1 ISR. */
+    if (gOpenMvDebugEnabled) {
+        nextHead = (uint8_t) ((gOpenMvDebugRxHead + 1U) &
+            (OPENMV_DEBUG_RX_BUFFER_SIZE - 1U));
+        if (nextHead != gOpenMvDebugRxTail) {
+            gOpenMvDebugRxBuffer[gOpenMvDebugRxHead] = rxData;
+            gOpenMvDebugRxHead = nextHead;
+        } else {
+            gOpenMvDebugRxOverflow = true;
+        }
     }
 
     if ((rxData >= (uint8_t) '0') && (rxData <= (uint8_t) '9')) {
         gOpenMvNumber = (uint8_t) (rxData - (uint8_t) '0');
-        gOpenMvNumberPending = true;
+        /*
+         * Task selection cycles through Task2 before Task3. Keep an
+         * independent event for each task so Task2 cannot consume Task3's
+         * initial vision result while the user is switching modes.
+         */
+        gOpenMvTask2NumberPending = true;
+        gOpenMvTask3NumberPending = true;
+        gOpenMvNumberValid = true;
         gOpenMvDisplayPending = rxData;
     } else if ((rxData == (uint8_t) 'L') || (rxData == (uint8_t) 'l')) {
         gOpenMvTurnPending = TASK2_TURN_LEFT;
