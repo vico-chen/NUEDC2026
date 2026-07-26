@@ -1,11 +1,11 @@
 #include "task2_control.h"
 
-#define TASK2_CRUISE_RPM                    (90)
+#define TASK2_CRUISE_RPM                    (150)
 #define TASK2_RAMP_SAMPLES                  (20U) /* 0.20 s */
 #define TASK2_TARGET_INTERSECTION_NUMBER    (2U)
 #define TASK2_INTERSECTION_THRESHOLD        (6U)
 #define TASK2_INTERSECTION_CONFIRM_SAMPLES  (2U)
-#define TASK2_ADVANCE_SAMPLES               (22U) /* 0.22 s */
+#define TASK2_ADVANCE_SAMPLES               (16U) /* 0.16 s */
 #define TASK2_MIN_BRAKE_SAMPLES             (15U)
 #define TASK2_BRAKE_TIMEOUT_SAMPLES         (80U)
 #define TASK2_TURN_DEGREES                  (85.0f)
@@ -194,7 +194,7 @@ void Task2Control_update(Task2Control *control,
                     control->nextTurnRight = control->endpoint2;
                     Task2Control_beginAdvance(control);
                     Task2Control_log(control,
-                        "TASK2 CROSS2 ADVANCE 220ms\r\n");
+                        "TASK2 CROSS2 ADVANCE 160ms\r\n");
                     break;
                 }
                 Task2Control_log(control,
@@ -220,7 +220,7 @@ void Task2Control_update(Task2Control *control,
                 control->nextTurnRight = !control->endpoint2;
                 Task2Control_beginAdvance(control);
                 Task2Control_log(control,
-                    "TASK2 RETURN CROSS ADVANCE 220ms\r\n");
+                    "TASK2 RETURN CROSS ADVANCE 160ms\r\n");
                 break;
             }
 
@@ -259,7 +259,7 @@ void Task2Control_update(Task2Control *control,
                 } else {
                     CarControl_emergencyStop(control->io.car);
                     control->state = TASK2_FAULT;
-                    control->io.setRedLed(true);
+                    control->io.setRedLed(false);
                     Task2Control_log(control,
                         "TASK2 TURN START FAILED\r\n");
                 }
@@ -267,7 +267,7 @@ void Task2Control_update(Task2Control *control,
                 TASK2_BRAKE_TIMEOUT_SAMPLES) {
                 CarControl_emergencyStop(control->io.car);
                 control->state = TASK2_FAULT;
-                control->io.setRedLed(true);
+                control->io.setRedLed(false);
                 Task2Control_log(control,
                     "TASK2 TURN BRAKE TIMEOUT\r\n");
             }
@@ -291,7 +291,7 @@ void Task2Control_update(Task2Control *control,
                 (turnResult == ANGLE_TURN_RESULT_FAULT)) {
                 CarControl_emergencyStop(control->io.car);
                 control->state = TASK2_FAULT;
-                control->io.setRedLed(true);
+                control->io.setRedLed(false);
                 Task2Control_log(control,
                     "TASK2 TURN FAULT\r\n");
             }
@@ -339,7 +339,7 @@ void Task2Control_update(Task2Control *control,
                 TASK2_BRAKE_TIMEOUT_SAMPLES) {
                 CarControl_emergencyStop(control->io.car);
                 control->state = TASK2_FAULT;
-                control->io.setRedLed(true);
+                control->io.setRedLed(false);
                 Task2Control_log(control,
                     "TASK2 END BRAKE TIMEOUT\r\n");
             }
@@ -393,7 +393,7 @@ void Task2Control_update(Task2Control *control,
                     TASK2_BRAKE_TIMEOUT_SAMPLES)) {
                 CarControl_emergencyStop(control->io.car);
                 control->state = TASK2_FAULT;
-                control->io.setRedLed(true);
+                control->io.setRedLed(false);
                 Task2Control_log(control,
                     "TASK2 FINAL BRAKE TIMEOUT\r\n");
             }
@@ -414,7 +414,7 @@ void Task2Control_update(Task2Control *control,
                 } else {
                     CarControl_emergencyStop(control->io.car);
                     control->state = TASK2_FAULT;
-                    control->io.setRedLed(true);
+                    control->io.setRedLed(false);
                     Task2Control_log(control,
                         "TASK2 RETURN TURN START FAILED\r\n");
                 }
@@ -439,7 +439,7 @@ void Task2Control_update(Task2Control *control,
                 (turnResult == ANGLE_TURN_RESULT_FAULT)) {
                 CarControl_emergencyStop(control->io.car);
                 control->state = TASK2_FAULT;
-                control->io.setRedLed(true);
+                control->io.setRedLed(false);
                 Task2Control_log(control,
                     "TASK2 RETURN TURN FAULT\r\n");
             }

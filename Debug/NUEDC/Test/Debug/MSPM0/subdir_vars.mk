@@ -1,0 +1,12 @@
+################################################################################
+# Automatically-generated file. Do not edit!
+################################################################################
+
+SHELL = cmd.exe
+
+# Add inputs and outputs from these tool invocations to the build variables 
+O_SRCS += \
+../NUEDC/Test/Debug/MSPM0/clock.o \
+../NUEDC/Test/Debug/MSPM0/interrupt.o 
+
+

@@ -15,11 +15,19 @@ typedef enum {
     TASK_MANAGER_TASK1_ENDPOINT_2 = 2
 } TaskManager_Task1Endpoint;
 
+typedef enum {
+    TASK_MANAGER_TASK3_ENDPOINT_1 = 1,
+    TASK_MANAGER_TASK3_ENDPOINT_2 = 2,
+    TASK_MANAGER_TASK3_ENDPOINT_3 = 3,
+    TASK_MANAGER_TASK3_ENDPOINT_4 = 4
+} TaskManager_Task3Endpoint;
+
 void TaskManager_init(bool oledReady);
 void TaskManager_update(void);
 TaskManager_Task TaskManager_getActiveTask(void);
 TaskManager_Task1Endpoint TaskManager_getTask1Endpoint(void);
 TaskManager_Task1Endpoint TaskManager_getTask2Endpoint(void);
+TaskManager_Task3Endpoint TaskManager_getTask3Endpoint(void);
 /* Returns true exactly once for each debounced, low-active PIN_STATUS press. */
 bool TaskManager_takeStatusPressed(void);
 /* Returns true exactly once for each debounced PIN_STATUS release. */

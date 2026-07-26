@@ -14,6 +14,7 @@ typedef struct {
 static TaskManager_Task gActiveTask;
 static TaskManager_Task1Endpoint gTask1Endpoint;
 static TaskManager_Task1Endpoint gTask2Endpoint;
+static TaskManager_Task3Endpoint gTask3Endpoint;
 static bool gOledReady;
 static TaskManager_ButtonState gTaskButton;
 static TaskManager_ButtonState gTask1EndpointButton;
@@ -75,7 +76,8 @@ static void TaskManager_showActiveTask(void)
             gOledReady = OLED_ShowTaskEndpoint(2U,
                 (uint8_t) gTask2Endpoint);
         } else {
-            gOledReady = OLED_ShowTask((uint8_t) gActiveTask);
+            gOledReady = OLED_ShowTaskEndpoint(3U,
+                (uint8_t) gTask3Endpoint);
         }
     }
 }
@@ -93,6 +95,17 @@ static void TaskManager_advanceTask(void)
 static void TaskManager_toggleActiveEndpoint(void)
 {
     TaskManager_Task1Endpoint *endpoint;
+
+    if (gActiveTask == TASK_MANAGER_TASK_3) {
+        if (gTask3Endpoint == TASK_MANAGER_TASK3_ENDPOINT_4) {
+            gTask3Endpoint = TASK_MANAGER_TASK3_ENDPOINT_1;
+        } else {
+            gTask3Endpoint = (TaskManager_Task3Endpoint)
+                ((uint8_t) gTask3Endpoint + 1U);
+        }
+        TaskManager_showActiveTask();
+        return;
+    }
 
     if (gActiveTask == TASK_MANAGER_TASK_1) {
         endpoint = &gTask1Endpoint;
@@ -127,6 +140,7 @@ void TaskManager_init(bool oledReady)
     gActiveTask = TASK_MANAGER_TASK_1;
     gTask1Endpoint = TASK_MANAGER_TASK1_ENDPOINT_1;
     gTask2Endpoint = TASK_MANAGER_TASK1_ENDPOINT_1;
+    gTask3Endpoint = TASK_MANAGER_TASK3_ENDPOINT_1;
     gTaskButton.rawPressed = TaskManager_readButtonPressed();
     gTaskButton.stablePressed = gTaskButton.rawPressed;
     gTaskButton.debounceCount = 0U;
@@ -179,6 +193,11 @@ TaskManager_Task1Endpoint TaskManager_getTask1Endpoint(void)
 TaskManager_Task1Endpoint TaskManager_getTask2Endpoint(void)
 {
     return gTask2Endpoint;
+}
+
+TaskManager_Task3Endpoint TaskManager_getTask3Endpoint(void)
+{
+    return gTask3Endpoint;
 }
 
 bool TaskManager_takeStatusPressed(void)

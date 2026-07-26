@@ -225,13 +225,6 @@ static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
 static volatile bool gMpu6050SampleDue;
-static volatile bool gOpenMvTask3NumberPending;
-static volatile bool gOpenMvNumberValid;
-static volatile uint8_t gOpenMvNumber;
-static volatile Task3Control_Turn gOpenMvTurnPending;
-static volatile uint8_t gOpenMvDisplayPending;
-static uint8_t gOpenMvLastDisplayed;
-static uint8_t gOpenMvLastDisplayedTask;
 
 /* OpenMV UART1 receive monitor, controlled by UART0 commands O/O1/O0. */
 static volatile uint8_t
@@ -1503,12 +1496,10 @@ static void Car_processUartCommand(void)
 int main(void)
 {
     SYSCFG_DL_init();
+    Task1_setRedLed(false);
+    Task1_setGreenLed(false);
 
-    /*
-     * OpenMV may send its initial digit immediately after power-up. Enable
-     * UART1 RX before the OLED setup and 5-second MPU calibration so that
-     * this one-shot result is not lost.
-     */
+    /* Keep UART1 RX available for the optional O1 hardware monitor. */
     NVIC_ClearPendingIRQ(UART_OPENMV_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_OPENMV_INST_INT_IRQN);
 
@@ -1625,15 +1616,6 @@ int main(void)
                     TaskManager_takeStatusPressed();
                 bool statusReleased =
                     TaskManager_takeStatusReleased();
-                bool task3NumberReceived =
-                    (activeTask == TASK_MANAGER_TASK_3) &&
-                    gOpenMvTask3NumberPending;
-                Task3Control_Turn visualTurn = gOpenMvTurnPending;
-
-                if (task3NumberReceived) {
-                    gOpenMvTask3NumberPending = false;
-                }
-                gOpenMvTurnPending = TASK3_TURN_NONE;
                 Task1Control_update(&gTask1Control,
                     activeTask, TaskManager_getTask1Endpoint(),
                     statusPressed, statusReleased,
@@ -1643,9 +1625,9 @@ int main(void)
                     statusPressed, statusReleased,
                     gMpu6050Ready, angleTurnResult);
                 Task3Control_update(&gTask3Control,
-                    activeTask, statusPressed, statusReleased,
-                    task3NumberReceived,
-                    visualTurn, gMpu6050Ready, angleTurnResult);
+                    activeTask, TaskManager_getTask3Endpoint(),
+                    statusPressed, statusReleased,
+                    gMpu6050Ready, angleTurnResult);
             }
 
             /* UART I remains available while Task1 waits for its load. */
@@ -1655,53 +1637,11 @@ int main(void)
                 LineTracking_update();
             }
 
-            if (gOpenMvLastDisplayedTask !=
-                (uint8_t) TaskManager_getActiveTask()) {
-                gOpenMvLastDisplayed = 0U;
-                gOpenMvLastDisplayedTask =
-                    (uint8_t) TaskManager_getActiveTask();
-                if (gOpenMvNumberValid &&
-                    (TaskManager_getActiveTask() ==
-                        TASK_MANAGER_TASK_3)) {
-                    gOpenMvDisplayPending = (uint8_t)
-                        ((uint8_t) '0' + gOpenMvNumber);
-                }
-            }
         }
 
         if (gUartCommandReady) {
             Car_processUartCommand();
             gUartCommandReady = false;
-        }
-
-        /*
-         * OLED I2C writes are blocking, so service them outside the 10 ms
-         * motion-control block. Repeated OpenMV frames do not redraw the
-         * same message.
-         */
-        if (gOpenMvDisplayPending != 0U) {
-            uint8_t displayCode = gOpenMvDisplayPending;
-
-            gOpenMvDisplayPending = 0U;
-            if ((TaskManager_getActiveTask() ==
-                    TASK_MANAGER_TASK_3) &&
-                gOledReady &&
-                (displayCode != gOpenMvLastDisplayed)) {
-                if ((displayCode >= (uint8_t) '0') &&
-                    (displayCode <= (uint8_t) '9')) {
-                    uint8_t number = (uint8_t)
-                        (displayCode - (uint8_t) '0');
-
-                    gOledReady =
-                        OLED_ShowTask3Number(number);
-                } else {
-                    gOledReady =
-                        OLED_ShowTask3Turn((char) displayCode);
-                }
-                if (gOledReady) {
-                    gOpenMvLastDisplayed = displayCode;
-                }
-            }
         }
 
         OpenMvDebug_service();
@@ -1802,16 +1742,4 @@ void UART_OPENMV_INST_IRQHandler(void)
         }
     }
 
-    if ((rxData >= (uint8_t) '0') && (rxData <= (uint8_t) '9')) {
-        gOpenMvNumber = (uint8_t) (rxData - (uint8_t) '0');
-        gOpenMvTask3NumberPending = true;
-        gOpenMvNumberValid = true;
-        gOpenMvDisplayPending = rxData;
-    } else if ((rxData == (uint8_t) 'L') || (rxData == (uint8_t) 'l')) {
-        gOpenMvTurnPending = TASK3_TURN_LEFT;
-        gOpenMvDisplayPending = (uint8_t) 'L';
-    } else if ((rxData == (uint8_t) 'R') || (rxData == (uint8_t) 'r')) {
-        gOpenMvTurnPending = TASK3_TURN_RIGHT;
-        gOpenMvDisplayPending = (uint8_t) 'R';
-    }
 }

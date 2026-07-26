@@ -1,10 +1,10 @@
 #include "task1_control.h"
 
-#define TASK1_CRUISE_TARGET_RPM (300)
+#define TASK1_CRUISE_TARGET_RPM (150)
 #define TASK1_ACCELERATION_SAMPLES (20U)
 #define TASK1_INTERSECTION_THRESHOLD (6U)
 #define TASK1_INTERSECTION_CONFIRM_SAMPLES (2U)
-#define TASK1_ADVANCE_SAMPLES (5U)
+#define TASK1_ADVANCE_SAMPLES (16U) /* 0.16 s */
 #define TASK1_BRAKE_MIN_SAMPLES (15U)
 #define TASK1_BRAKE_TIMEOUT_SAMPLES (80U)
 #define TASK1_TURN_DEGREES (85.0f)
@@ -88,8 +88,8 @@ static void Task1Control_start(Task1Control *control,
     control->config.setGreenLed(false);
     control->state = TASK1_CONTROL_FOLLOW_INTERSECTION;
     Task1Control_log(control, control->endpoint2 ?
-        "TASK1 END2 STARTED target=300 ramp=200ms\r\n" :
-        "TASK1 END1 STARTED target=300 ramp=200ms\r\n");
+        "TASK1 END2 STARTED target=150 ramp=200ms\r\n" :
+        "TASK1 END1 STARTED target=150 ramp=200ms\r\n");
 }
 
 void Task1Control_init(Task1Control *control,
@@ -159,7 +159,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
                 control->state = TASK1_CONTROL_ADVANCE;
                 CarControl_setMotion(control->config.car, CAR_CONTROL_FORWARD,
                     TASK1_CRUISE_TARGET_RPM, 100U);
-                Task1Control_log(control, "TASK1 INTERSECTION ADVANCE 50ms\r\n");
+                Task1Control_log(control, "TASK1 INTERSECTION ADVANCE 160ms\r\n");
             } else {
                 control->config.updateLineTracking();
             }
@@ -191,13 +191,13 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
                 } else {
                     CarControl_emergencyStop(control->config.car);
                     control->state = TASK1_CONTROL_FAULT;
-                    control->config.setRedLed(true);
+                    control->config.setRedLed(false);
                     Task1Control_log(control, "TASK1 TURN START FAILED\r\n");
                 }
             } else if (control->brakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES) {
                 CarControl_emergencyStop(control->config.car);
                 control->state = TASK1_CONTROL_FAULT;
-                control->config.setRedLed(true);
+                control->config.setRedLed(false);
                 Task1Control_log(control, "TASK1 BRAKE TIMEOUT\r\n");
             }
             break;
@@ -215,7 +215,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
                        (angleTurnResult == ANGLE_TURN_RESULT_FAULT)) {
                 CarControl_emergencyStop(control->config.car);
                 control->state = TASK1_CONTROL_FAULT;
-                control->config.setRedLed(true);
+                control->config.setRedLed(false);
                 Task1Control_log(control, "TASK1 TURN FAULT\r\n");
             }
             break;
@@ -255,7 +255,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
             } else if (control->brakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES) {
                 CarControl_emergencyStop(control->config.car);
                 control->state = TASK1_CONTROL_FAULT;
-                control->config.setRedLed(true);
+                control->config.setRedLed(false);
                 Task1Control_log(control, "TASK1 END BRAKE TIMEOUT\r\n");
             }
             break;
@@ -300,7 +300,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
                 (control->brakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES)) {
                 CarControl_emergencyStop(control->config.car);
                 control->state = TASK1_CONTROL_FAULT;
-                control->config.setRedLed(true);
+                control->config.setRedLed(false);
                 Task1Control_log(control, "TASK1 FINAL BRAKE TIMEOUT\r\n");
             }
             break;
@@ -317,7 +317,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
                 } else {
                     CarControl_emergencyStop(control->config.car);
                     control->state = TASK1_CONTROL_FAULT;
-                    control->config.setRedLed(true);
+                    control->config.setRedLed(false);
                     Task1Control_log(control, "TASK1 RETURN TURN START FAILED\r\n");
                 }
             }
@@ -338,7 +338,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
                        (angleTurnResult == ANGLE_TURN_RESULT_FAULT)) {
                 CarControl_emergencyStop(control->config.car);
                 control->state = TASK1_CONTROL_FAULT;
-                control->config.setRedLed(true);
+                control->config.setRedLed(false);
                 Task1Control_log(control, "TASK1 RETURN TURN FAULT\r\n");
             }
             break;

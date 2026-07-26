@@ -195,9 +195,12 @@ bool OLED_ShowTask(uint8_t taskNumber)
 bool OLED_ShowTaskEndpoint(uint8_t taskNumber, uint8_t endpointNumber)
 {
     char endpointText[] = "TASK1 END1";
+    uint8_t maximumEndpoint =
+        (taskNumber == 3U) ? 4U : 2U;
 
-    if ((taskNumber < 1U) || (taskNumber > 2U) ||
-        (endpointNumber < 1U) || (endpointNumber > 2U)) {
+    if ((taskNumber < 1U) || (taskNumber > 3U) ||
+        (endpointNumber < 1U) ||
+        (endpointNumber > maximumEndpoint)) {
         return false;
     }
 
