@@ -17,6 +17,7 @@ typedef struct {
     void (*resetLineTracking)(void);
     void (*updateLineTracking)(void);
     uint8_t (*readActiveChannelCount)(void);
+    uint8_t (*readActiveChannelMask)(void);
     void (*setRedLed)(bool enabled);
     void (*setGreenLed)(bool enabled);
     void (*log)(const char *text);

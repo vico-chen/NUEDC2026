@@ -799,17 +799,30 @@ static void Task1_setGreenLed(bool enabled)
     }
 }
 
-static uint8_t Task1_readActiveChannelCount(void)
+static uint8_t Task1_readActiveChannelMask(void)
 {
     uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
-    uint8_t activeCount = 0U;
+    uint8_t activeMask = 0U;
     uint8_t i;
 
     Grayscale_Sensor_ReadAll(values);
     for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
         if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
-            activeCount++;
+            activeMask |= (uint8_t) (1U << i);
         }
+    }
+    return activeMask;
+}
+
+static uint8_t Task1_readActiveChannelCount(void)
+{
+    uint8_t activeMask = Task1_readActiveChannelMask();
+    uint8_t activeCount = 0U;
+
+    while (activeMask != 0U) {
+        activeCount = (uint8_t) (activeCount +
+            (activeMask & 0x01U));
+        activeMask >>= 1U;
     }
     return activeCount;
 }
@@ -1545,6 +1558,7 @@ int main(void)
             .resetLineTracking = LineTracking_resetPid,
             .updateLineTracking = LineTracking_update,
             .readActiveChannelCount = Task1_readActiveChannelCount,
+            .readActiveChannelMask = Task1_readActiveChannelMask,
             .setRedLed = Task1_setRedLed, .setGreenLed = Task1_setGreenLed,
             .log = UART_sendString,
         };
@@ -1636,7 +1650,8 @@ int main(void)
                     task2NumberReceived,
                     visualTurn, gMpu6050Ready, angleTurnResult);
                 Task3Control_update(&gTask3Control,
-                    activeTask, statusPressed, task3NumberReceived,
+                    activeTask, statusPressed, statusReleased,
+                    task3NumberReceived,
                     visualTurn, gMpu6050Ready, angleTurnResult);
             }
 

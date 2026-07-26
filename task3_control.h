@@ -15,6 +15,8 @@ typedef enum {
     TASK3_REVERSE,
     TASK3_FINAL_BRAKE,
     TASK3_WAIT_UNLOAD,
+    TASK3_RETURN_FOLLOW,
+    TASK3_DONE,
     TASK3_FAULT
 } Task3Control_State;
 
@@ -23,6 +25,7 @@ typedef struct {
     Task3Control_State state;
     Task2Control_Turn pendingTurn;
     uint8_t completedTurns;
+    uint8_t completedReturnTurns;
     uint8_t rampSamples;
     uint8_t intersectionConfirmSamples;
     uint8_t advanceSamples;
@@ -30,15 +33,17 @@ typedef struct {
     uint8_t reverseSamples;
     uint8_t settledSamples;
     uint16_t brakeSamples;
-    bool lineSeenAfterSecondTurn;
+    bool lineSeenAfterFinalTurn;
     bool intersectionArmed;
+    bool returning;
+    bool uTurn;
 } Task3Control;
 
 void Task3Control_init(Task3Control *control,
     const Task1Control_Config *io);
 void Task3Control_reset(Task3Control *control);
 void Task3Control_update(Task3Control *control, TaskManager_Task task,
-    bool statusPressed, bool numberReceived,
+    bool statusPressed, bool statusReleased, bool numberReceived,
     Task2Control_Turn visualTurn, bool mpuReady,
     AngleTurnControl_Result turnResult);
 
