@@ -1209,6 +1209,19 @@ static void Car_processUartCommand(void)
             UART_sendString("MPU6050_ERROR\r\n");
             return;
         }
+
+        /* 与自动任务保持一致：左转约 90°/180°统一改走右转。 */
+        if ((turnCommand == 'L') &&
+            (angleTurnDegrees >= 80.0f) &&
+            (angleTurnDegrees <= 100.0f)) {
+            turnCommand = 'R';
+            angleTurnDegrees = 270.0f;
+        } else if ((turnCommand == 'L') &&
+                   (angleTurnDegrees >= 170.0f) &&
+                   (angleTurnDegrees <= 190.0f)) {
+            turnCommand = 'R';
+        }
+
         if (AngleTurnControl_start(&gAngleTurn,
                 turnCommand == 'L', angleTurnDegrees,
                 angleTurnMaximumRpm)) {

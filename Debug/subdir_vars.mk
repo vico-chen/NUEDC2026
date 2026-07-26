@@ -14,7 +14,7 @@ C_SRCS += \
 ../grayscale_sensor.c \
 ../main.c \
 ./ti_msp_dl_config.c \
-C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c \
+E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c \
 ../motor_control.c \
 ../mpu6050_angle.c \
 ../oled.c \
@@ -115,7 +115,7 @@ C_SRCS__QUOTED += \
 "../grayscale_sensor.c" \
 "../main.c" \
 "./ti_msp_dl_config.c" \
-"C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" \
+"E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" \
 "../motor_control.c" \
 "../mpu6050_angle.c" \
 "../oled.c" \

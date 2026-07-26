@@ -4,7 +4,7 @@
 
 SHELL = cmd.exe
 
-CG_TOOL_ROOT := C:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS
+CG_TOOL_ROOT := E:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS
 
 GEN_OPTS__FLAG := @"./device.opt" 
 GEN_CMDS__FLAG := -Wl,-l"./device_linker.cmd" 
@@ -139,7 +139,7 @@ all: $(OBJS) $(GEN_CMDS)
 # Tool invocations
 main.out: $(OBJS) $(GEN_CMDS)
 	@echo 'Arm Linker - building target: "$@"'
-	"C:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS/bin/tiarmclang.exe" @"device.opt"  -march=thumbv6m -mcpu=cortex-m0plus -mfloat-abi=soft -mlittle-endian -mthumb -O2 -g -Wall -Wl,-m"main.map" -Wl,-i"C:/ti/mspm0_sdk_2_11_00_07/source" -Wl,-i"C:/Users/Vico/Desktop/26NUEDC/Code/main/NUEDC2026" -Wl,-i"C:/Users/Vico/Desktop/26NUEDC/Code/main/NUEDC2026/Debug/syscfg" -Wl,-i"C:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS/lib" -Wl,--diag_wrap=off -Wl,--display_error_number -Wl,--warn_sections -Wl,--xml_link_info="main_linkInfo.xml" -Wl,--rom_model -o "main.out" $(ORDERED_OBJS)
+	"E:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS/bin/tiarmclang.exe" @"device.opt"  -march=thumbv6m -mcpu=cortex-m0plus -mfloat-abi=soft -mlittle-endian -mthumb -O2 -g -Wall -Wl,-m"main.map" -Wl,-i"E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source" -Wl,-i"E:/LittleParsnip/MyProjects/All_MCU/MSPM0G3507/NUEDC/NUEDC2026-1/NUEDC2026" -Wl,-i"E:/LittleParsnip/MyProjects/All_MCU/MSPM0G3507/NUEDC/NUEDC2026-1/NUEDC2026/Debug/syscfg" -Wl,-i"E:/ti/ccs2100/ccs/tools/compiler/ti-cgt-armllvm_5.1.1.LTS/lib" -Wl,--diag_wrap=off -Wl,--display_error_number -Wl,--warn_sections -Wl,--xml_link_info="main_linkInfo.xml" -Wl,--rom_model -o "main.out" $(ORDERED_OBJS)
 	@echo 'Finished building target: "$@"'
 	@echo ' '
 

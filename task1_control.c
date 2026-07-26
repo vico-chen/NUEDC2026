@@ -1,13 +1,14 @@
 #include "task1_control.h"
 
-#define TASK1_CRUISE_TARGET_RPM (300)
+#define TASK1_CRUISE_TARGET_RPM (110)
 #define TASK1_ACCELERATION_SAMPLES (20U)
 #define TASK1_INTERSECTION_THRESHOLD (6U)
 #define TASK1_INTERSECTION_CONFIRM_SAMPLES (2U)
-#define TASK1_ADVANCE_SAMPLES (5U)
+#define TASK1_ADVANCE_SAMPLES (22U)
 #define TASK1_BRAKE_MIN_SAMPLES (15U)
 #define TASK1_BRAKE_TIMEOUT_SAMPLES (80U)
 #define TASK1_TURN_DEGREES (85.0f)
+#define TASK1_LEFT_AS_RIGHT_DEGREES (270.0f)
 #define TASK1_TURN_RPM (100)
 #define TASK1_RETURN_DEGREES (180.0f)
 #define TASK1_BLANK_CONFIRM_SAMPLES (3U)
@@ -182,12 +183,14 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
             if ((control->brakeSamples >= TASK1_BRAKE_MIN_SAMPLES) &&
                 Task1Control_carStopped(control)) {
                 if (mpu6050Ready && AngleTurnControl_start(control->config.angleTurn,
-                        !control->nextTurnRight, TASK1_TURN_DEGREES,
+                        false, control->nextTurnRight ?
+                            TASK1_TURN_DEGREES :
+                            TASK1_LEFT_AS_RIGHT_DEGREES,
                         TASK1_TURN_RPM)) {
                     control->state = TASK1_CONTROL_TURNING;
                     Task1Control_log(control, control->nextTurnRight ?
                         "TASK1 RIGHT TURN STARTED 85deg\r\n" :
-                        "TASK1 LEFT TURN STARTED 85deg\r\n");
+                        "TASK1 LEFT ROUTE VIA RIGHT TURN 270deg\r\n");
                 } else {
                     CarControl_emergencyStop(control->config.car);
                     control->state = TASK1_CONTROL_FAULT;
@@ -310,10 +313,11 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
                 control->config.setRedLed(false);
                 control->config.setGreenLed(false);
                 if (mpu6050Ready && AngleTurnControl_start(control->config.angleTurn,
-                        !control->endpoint2, TASK1_RETURN_DEGREES,
+                        false, TASK1_RETURN_DEGREES,
                         TASK1_TURN_RPM)) {
                     control->state = TASK1_CONTROL_RETURN_TURNING;
-                    Task1Control_log(control, "TASK1 RETURN TURN STARTED 180deg\r\n");
+                    Task1Control_log(control,
+                        "TASK1 RETURN RIGHT TURN STARTED 180deg\r\n");
                 } else {
                     CarControl_emergencyStop(control->config.car);
                     control->state = TASK1_CONTROL_FAULT;

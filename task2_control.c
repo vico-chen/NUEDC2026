@@ -6,6 +6,7 @@
 #define T2_MIN_BRAKE 15U
 #define T2_BRAKE_TIMEOUT 80U
 #define T2_TURN_DEG 85.0f
+#define T2_LEFT_AS_RIGHT_DEG 270.0f
 #define T2_TURN_RPM 100
 #define T2_REVERSE_RPM 75
 #define T2_REVERSE_TICKS 50U
@@ -74,11 +75,11 @@ void Task2Control_update(Task2Control *c,TaskManager_Task task,bool press,bool r
    else if(c->lineSeen&&c->turnCompletedThisLeg){if(++c->blank>=3U){T2_stop(c);c->brake=0U;c->state=TASK2_BRAKE_END;}}
    break;
  case TASK2_ADVANCE: CarControl_setMotion(c->io.car,CAR_CONTROL_FORWARD,T2_CRUISE,100U);if(++c->advance>=T2_ADVANCE){CarControl_stop(c->io.car);c->brake=0U;c->state=TASK2_BRAKE_TURN;}break;
- case TASK2_BRAKE_TURN: if(++c->brake>=T2_MIN_BRAKE && T2_stopped(c)){bool left=c->pendingTurn==TASK2_TURN_LEFT;if(mpu&&AngleTurnControl_start(c->io.angleTurn,left,T2_TURN_DEG,T2_TURN_RPM)){c->pendingTurn=TASK2_TURN_NONE;c->isUTurn=false;c->state=TASK2_TURNING;}else{c->state=TASK2_FAULT;c->io.setRedLed(true);}}else if(c->brake>=T2_BRAKE_TIMEOUT){c->state=TASK2_FAULT;c->io.setRedLed(true);}break;
+ case TASK2_BRAKE_TURN: if(++c->brake>=T2_MIN_BRAKE && T2_stopped(c)){bool left=c->pendingTurn==TASK2_TURN_LEFT;if(mpu&&AngleTurnControl_start(c->io.angleTurn,false,left?T2_LEFT_AS_RIGHT_DEG:T2_TURN_DEG,T2_TURN_RPM)){c->pendingTurn=TASK2_TURN_NONE;c->isUTurn=false;c->state=TASK2_TURNING;}else{c->state=TASK2_FAULT;c->io.setRedLed(true);}}else if(c->brake>=T2_BRAKE_TIMEOUT){c->state=TASK2_FAULT;c->io.setRedLed(true);}break;
  case TASK2_TURNING: if(result==ANGLE_TURN_RESULT_COMPLETED){c->ramp=0U;c->intersectionLatched=false;c->intersectionCount=0U;c->lineSeen=false;c->blank=0U;if(c->isUTurn){c->isUTurn=false;c->turnCompletedThisLeg=false;c->pendingTurn=(c->outboundTurn==TASK2_TURN_LEFT)?TASK2_TURN_RIGHT:TASK2_TURN_LEFT;}else{c->turnCompletedThisLeg=true;}c->io.setLineTrackingEnabled(true);c->io.resetLineTracking();c->state=c->returning?TASK2_RETURNING:TASK2_FOLLOW;}else if(result==ANGLE_TURN_RESULT_TIMEOUT||result==ANGLE_TURN_RESULT_FAULT){c->state=TASK2_FAULT;c->io.setRedLed(true);}break;
  case TASK2_BRAKE_END: if(++c->brake>=T2_MIN_BRAKE&&T2_stopped(c)){c->reverse=0U;CarControl_setMotion(c->io.car,CAR_CONTROL_BACKWARD,T2_REVERSE_RPM,100U);c->state=TASK2_REVERSE;}else if(c->brake>=T2_BRAKE_TIMEOUT){c->state=TASK2_FAULT;c->io.setRedLed(true);}break;
  case TASK2_REVERSE: CarControl_setMotion(c->io.car,CAR_CONTROL_BACKWARD,T2_REVERSE_RPM,100U);if(++c->reverse>=T2_REVERSE_TICKS){CarControl_stop(c->io.car);c->brake=0U;c->settle=0U;c->state=TASK2_FINAL_BRAKE;}break;
  case TASK2_FINAL_BRAKE: if(T2_stopped(c)){if(++c->settle>=5U){CarControl_emergencyStop(c->io.car);if(c->returning){c->state=TASK2_DONE;c->io.setGreenLed(true);}else{c->state=TASK2_WAIT_UNLOAD;c->io.setRedLed(true);}}}else c->settle=0U; if(++c->brake>=T2_BRAKE_TIMEOUT){c->state=TASK2_FAULT;c->io.setRedLed(true);}break;
- case TASK2_WAIT_UNLOAD: if(release){c->io.setRedLed(false);if(mpu&&AngleTurnControl_start(c->io.angleTurn,true,180.0f,T2_TURN_RPM)){c->state=TASK2_TURNING;c->returning=true;c->isUTurn=true;c->lineSeen=false;c->blank=0U;}else{c->state=TASK2_FAULT;c->io.setRedLed(true);}}break;
+ case TASK2_WAIT_UNLOAD: if(release){c->io.setRedLed(false);if(mpu&&AngleTurnControl_start(c->io.angleTurn,false,180.0f,T2_TURN_RPM)){c->state=TASK2_TURNING;c->returning=true;c->isUTurn=true;c->lineSeen=false;c->blank=0U;}else{c->state=TASK2_FAULT;c->io.setRedLed(true);}}break;
  default: break; }
 }

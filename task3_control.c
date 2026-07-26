@@ -1,6 +1,6 @@
 #include "task3_control.h"
 
-#define TASK3_OUTBOUND_CRUISE_RPM         (50)
+#define TASK3_OUTBOUND_CRUISE_RPM         (110)
 #define TASK3_RETURN_CRUISE_RPM           (110)
 #define TASK3_RAMP_SAMPLES                (20U) /* 0.20 s */
 #define TASK3_INTERSECTION_THRESHOLD      (6U)
@@ -9,6 +9,7 @@
 #define TASK3_MIN_BRAKE_SAMPLES           (15U)
 #define TASK3_BRAKE_TIMEOUT_SAMPLES       (80U)
 #define TASK3_TURN_DEGREES                (85.0f)
+#define TASK3_LEFT_AS_RIGHT_DEGREES       (270.0f)
 #define TASK3_TURN_RPM                    (100)
 #define TASK3_REQUIRED_TURNS              (2U)
 #define TASK3_RETURN_TURN_DEGREES         (180.0f)
@@ -340,13 +341,15 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
 
                 if (mpuReady &&
                     AngleTurnControl_start(control->io.angleTurn,
-                        turnLeft, TASK3_TURN_DEGREES,
+                        false, turnLeft ?
+                            TASK3_LEFT_AS_RIGHT_DEGREES :
+                            TASK3_TURN_DEGREES,
                         TASK3_TURN_RPM)) {
                     control->pendingTurn = TASK2_TURN_NONE;
                     control->uTurn = false;
                     control->state = TASK3_TURNING;
                     Task3Control_log(control, turnLeft ?
-                        "TASK3 LEFT TURN STARTED\r\n" :
+                        "TASK3 LEFT ROUTE VIA RIGHT TURN 270deg\r\n" :
                         "TASK3 RIGHT TURN STARTED\r\n");
                 } else {
                     CarControl_emergencyStop(control->io.car);
@@ -496,7 +499,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                 control->lineSeenAfterFinalTurn = false;
                 if (mpuReady &&
                     AngleTurnControl_start(control->io.angleTurn,
-                        true, TASK3_RETURN_TURN_DEGREES,
+                        false, TASK3_RETURN_TURN_DEGREES,
                         TASK3_TURN_RPM)) {
                     control->returning = true;
                     control->uTurn = true;

@@ -2,6 +2,18 @@
 #include "mpu6050_angle.h"
 
 /*
+ * 全局转向策略：
+ *   左转约 90°改由右转 270°完成；
+ *   左转约 180°改为右转相同角度完成。
+ * 统一在底层转换，避免上层任务代码更新后重新引入左转动作。
+ */
+#define ANGLE_TURN_QUARTER_MIN_DEGREES    (80.0f)
+#define ANGLE_TURN_QUARTER_MAX_DEGREES    (100.0f)
+#define ANGLE_TURN_RIGHT_THREE_QUARTERS   (270.0f)
+#define ANGLE_TURN_HALF_MIN_DEGREES       (170.0f)
+#define ANGLE_TURN_HALF_MAX_DEGREES       (190.0f)
+
+/*
  * Accuracy-focused pivot profile without reverse hunting:
  *   SPIN  -> fixed cruise RPM, locked direction
  *   COAST -> start from rate-predicted remaining angle; no reverse brake
@@ -113,6 +125,18 @@ bool AngleTurnControl_start(AngleTurnControl *control, bool turnLeft,
     if (relativeAngleDegrees <= 0.0f) {
         return false;
     }
+
+    if (turnLeft &&
+        (relativeAngleDegrees >= ANGLE_TURN_QUARTER_MIN_DEGREES) &&
+        (relativeAngleDegrees <= ANGLE_TURN_QUARTER_MAX_DEGREES)) {
+        turnLeft = false;
+        relativeAngleDegrees = ANGLE_TURN_RIGHT_THREE_QUARTERS;
+    } else if (turnLeft &&
+               (relativeAngleDegrees >= ANGLE_TURN_HALF_MIN_DEGREES) &&
+               (relativeAngleDegrees <= ANGLE_TURN_HALF_MAX_DEGREES)) {
+        turnLeft = false;
+    }
+
     if (cruiseRpm <= 0) {
         cruiseRpm = control->config.defaultCruiseRpm;
     }
