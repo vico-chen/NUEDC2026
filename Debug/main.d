@@ -86,7 +86,7 @@ main.o: ../main.c \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h \
  ../motor_control.h ../car_control.h ../mpu6050_angle.h \
  ../angle_turn_control.h ../grayscale_sensor.h ../oled.h \
- ../task_manager.h ../task2_control.h ../task1_control.h \
+ ../task_manager.h ../task1_control.h ../task2_control.h \
  ../task3_control.h
 ti_msp_dl_config.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h:
@@ -178,6 +178,6 @@ C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h:
 ../grayscale_sensor.h:
 ../oled.h:
 ../task_manager.h:
-../task2_control.h:
 ../task1_control.h:
+../task2_control.h:
 ../task3_control.h:

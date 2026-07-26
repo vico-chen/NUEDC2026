@@ -38,6 +38,7 @@
 #include "grayscale_sensor.h"
 #include "oled.h"
 #include "task_manager.h"
+#include "task1_control.h"
 #include "task2_control.h"
 #include "task3_control.h"
 
@@ -65,21 +66,6 @@
 #define LINE_DEBUG_PRINT_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
 /* Debounce: require this many equal samples before accepting a bit flip. */
 #define LINE_SENSOR_DEBOUNCE_SAMPLES (2U)
-
-#define TASK1_CRUISE_TARGET_RPM (300)
-#define TASK1_ACCELERATION_SAMPLES (20U) /* 20 x 10 ms = 0.2 s */
-#define TASK1_INTERSECTION_ACTIVE_CHANNEL_THRESHOLD (6U)
-#define TASK1_INTERSECTION_PARTIAL_CONFIRM_SAMPLES  (2U)
-#define TASK1_INTERSECTION_ADVANCE_SAMPLES          (5U) /* 50 ms */
-#define TASK1_BRAKE_MIN_SAMPLES                     (15U)
-#define TASK1_BRAKE_TIMEOUT_SAMPLES                 (80U)
-#define TASK1_LEFT_TURN_DEGREES                      (85.0f)
-#define TASK1_LEFT_TURN_RPM                          (100)
-#define TASK1_RETURN_TURN_DEGREES                    (180.0f)
-#define TASK1_BLANK_CONFIRM_SAMPLES                  (3U)
-#define TASK1_END_REVERSE_RPM                        (75)
-#define TASK1_END_REVERSE_SAMPLES                    (50U) /* 0.5 s */
-#define TASK1_FINAL_BRAKE_SETTLE_SAMPLES              (5U) /* 50 ms */
 
 /*
  * Wheel layout:
@@ -270,37 +256,9 @@ static uint8_t gLineFilteredValues[GRAYSCALE_SENSOR_CHANNELS];
 static uint8_t gLinePendingValues[GRAYSCALE_SENSOR_CHANNELS];
 static uint8_t gLinePendingCount[GRAYSCALE_SENSOR_CHANNELS];
 static bool gLineFilterReady;
+static Task1Control gTask1Control;
 static Task2Control gTask2Control;
 static Task3Control gTask3Control;
-
-typedef enum {
-    TASK1_STATE_WAIT_LOAD,
-    TASK1_STATE_FOLLOW_TO_INTERSECTION,
-    TASK1_STATE_INTERSECTION_ADVANCE,
-    TASK1_STATE_BRAKING,
-    TASK1_STATE_TURNING,
-    TASK1_STATE_FOLLOW_TO_BLANK,
-    TASK1_STATE_END_BRAKING,
-    TASK1_STATE_END_REVERSING,
-    TASK1_STATE_END_FINAL_BRAKING,
-    TASK1_STATE_WAIT_UNLOAD,
-    TASK1_STATE_RETURN_TURNING,
-    TASK1_STATE_DONE,
-    TASK1_STATE_FAULT
-} Task1_State;
-
-static Task1_State gTask1State;
-static uint8_t gTask1IntersectionPartialCount;
-static uint8_t gTask1IntersectionAdvanceSamples;
-static uint8_t gTask1AccelerationSamples;
-static uint8_t gTask1BlankCount;
-static uint16_t gTask1BrakeSamples;
-static uint8_t gTask1EndReverseSamples;
-static uint8_t gTask1FinalBrakeSettledCount;
-static bool gTask1LineSeenAfterTurn;
-static bool gTask1Endpoint2;
-static bool gTask1ReturnPhase;
-static bool gTask1NextTurnRight;
 
 static bool gMotorStatusStreamEnabled;
 static bool gMotorStatusReportOnce;
@@ -856,345 +814,6 @@ static uint8_t Task1_readActiveChannelCount(void)
     return activeCount;
 }
 
-static bool Task1_detectIntersection(void)
-{
-    uint8_t activeCount = Task1_readActiveChannelCount();
-
-    if (activeCount == GRAYSCALE_SENSOR_CHANNELS) {
-        gTask1IntersectionPartialCount = 0U;
-        return true;
-    }
-    if (activeCount >= TASK1_INTERSECTION_ACTIVE_CHANNEL_THRESHOLD) {
-        if (gTask1IntersectionPartialCount < 255U) {
-            gTask1IntersectionPartialCount++;
-        }
-        return (gTask1IntersectionPartialCount >=
-            TASK1_INTERSECTION_PARTIAL_CONFIRM_SAMPLES);
-    }
-
-    gTask1IntersectionPartialCount = 0U;
-    return false;
-}
-
-static bool Task1_carStopped(void)
-{
-    const MotorControl *motors[] = {
-        &gMotorA, &gMotorB, &gMotorC, &gMotorD
-    };
-    uint8_t i;
-
-    for (i = 0U; i < (uint8_t) (sizeof(motors) / sizeof(motors[0])); i++) {
-        int32_t counts = motors[i]->speedCountsPerSample;
-        int32_t deadband = motors[i]->config.zeroSpeedDeadbandCounts;
-
-        if ((counts > deadband) || (counts < -deadband)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static void Task1_reset(void)
-{
-    gTask1State = TASK1_STATE_WAIT_LOAD;
-    gTask1IntersectionPartialCount = 0U;
-    gTask1IntersectionAdvanceSamples = 0U;
-    gTask1AccelerationSamples = 0U;
-    gTask1BlankCount = 0U;
-    gTask1BrakeSamples = 0U;
-    gTask1EndReverseSamples = 0U;
-    gTask1FinalBrakeSettledCount = 0U;
-    gTask1LineSeenAfterTurn = false;
-    gTask1Endpoint2 = false;
-    gTask1ReturnPhase = false;
-    gTask1NextTurnRight = false;
-    gLineTrackingEnabled = false;
-    gLineTrackingDebugEnabled = false;
-    LineTracking_resetPid();
-    AngleTurnControl_cancel(&gAngleTurn);
-    CarControl_stop(&gCar);
-    Task1_setRedLed(false);
-    Task1_setGreenLed(false);
-}
-
-static void Task1_start(TaskManager_Task1Endpoint endpoint)
-{
-    gLineTrackingBaseSpeedRpm = 0;
-    gLineTrackingEnabled = true;
-    gLineTrackingDebugEnabled = false;
-    gTask1State = TASK1_STATE_FOLLOW_TO_INTERSECTION;
-    gTask1IntersectionPartialCount = 0U;
-    gTask1IntersectionAdvanceSamples = 0U;
-    gTask1AccelerationSamples = 0U;
-    gTask1BlankCount = 0U;
-    gTask1BrakeSamples = 0U;
-    gTask1EndReverseSamples = 0U;
-    gTask1FinalBrakeSettledCount = 0U;
-    gTask1LineSeenAfterTurn = false;
-    gTask1Endpoint2 = (endpoint == TASK_MANAGER_TASK1_ENDPOINT_2);
-    gTask1ReturnPhase = false;
-    gTask1NextTurnRight = false;
-    LineTracking_resetPid();
-    AngleTurnControl_cancel(&gAngleTurn);
-    Task1_setRedLed(false);
-    Task1_setGreenLed(false);
-    UART_sendString(gTask1Endpoint2 ?
-        "TASK1 END2 STARTED target=300 ramp=200ms\r\n" :
-        "TASK1 END1 STARTED target=300 ramp=200ms\r\n");
-}
-
-static void Task1_applyCruiseRamp(void)
-{
-    if (gTask1AccelerationSamples < TASK1_ACCELERATION_SAMPLES) {
-        gTask1AccelerationSamples++;
-    }
-
-    gLineTrackingBaseSpeedRpm = (int16_t) (((int32_t)
-        TASK1_CRUISE_TARGET_RPM * gTask1AccelerationSamples) /
-        TASK1_ACCELERATION_SAMPLES);
-}
-
-static void Task1_update(AngleTurnControl_Result angleTurnResult)
-{
-    bool statusPressed;
-    bool statusReleased;
-    uint8_t activeCount;
-
-    if (TaskManager_getActiveTask() != TASK_MANAGER_TASK_1) {
-        if (gTask1State != TASK1_STATE_WAIT_LOAD) {
-            Task1_reset();
-        }
-        return;
-    }
-
-    statusPressed = TaskManager_takeStatusPressed();
-    statusReleased = TaskManager_takeStatusReleased();
-
-    if (gTask1State == TASK1_STATE_WAIT_LOAD) {
-        if (statusPressed) {
-            Task1_start(TaskManager_getTask1Endpoint());
-        }
-        return;
-    }
-
-    switch (gTask1State) {
-        case TASK1_STATE_FOLLOW_TO_INTERSECTION:
-            Task1_applyCruiseRamp();
-            if (Task1_detectIntersection()) {
-                gLineTrackingEnabled = false;
-                LineTracking_resetPid();
-                gTask1IntersectionAdvanceSamples = 0U;
-                gTask1NextTurnRight = gTask1ReturnPhase ?
-                    !gTask1Endpoint2 : gTask1Endpoint2;
-                gTask1State = TASK1_STATE_INTERSECTION_ADVANCE;
-                CarControl_setMotion(&gCar, CAR_CONTROL_FORWARD,
-                    TASK1_CRUISE_TARGET_RPM, 100U);
-                UART_sendString("TASK1 INTERSECTION ADVANCE 50ms\r\n");
-            } else {
-                LineTracking_update();
-            }
-            break;
-
-        case TASK1_STATE_INTERSECTION_ADVANCE:
-            CarControl_setMotion(&gCar, CAR_CONTROL_FORWARD,
-                TASK1_CRUISE_TARGET_RPM, 100U);
-            gTask1IntersectionAdvanceSamples++;
-            if (gTask1IntersectionAdvanceSamples >=
-                TASK1_INTERSECTION_ADVANCE_SAMPLES) {
-                CarControl_stop(&gCar);
-                gTask1BrakeSamples = 0U;
-                gTask1State = TASK1_STATE_BRAKING;
-                UART_sendString("TASK1 INTERSECTION BRAKING\r\n");
-            }
-            break;
-
-        case TASK1_STATE_BRAKING:
-            gTask1BrakeSamples++;
-            if ((gTask1BrakeSamples >= TASK1_BRAKE_MIN_SAMPLES) &&
-                Task1_carStopped()) {
-                if (gMpu6050Ready && AngleTurnControl_start(&gAngleTurn,
-                        !gTask1NextTurnRight, TASK1_LEFT_TURN_DEGREES,
-                        TASK1_LEFT_TURN_RPM)) {
-                    gTask1State = TASK1_STATE_TURNING;
-                    UART_sendString(gTask1NextTurnRight ?
-                        "TASK1 RIGHT TURN STARTED 85deg\r\n" :
-                        "TASK1 LEFT TURN STARTED 85deg\r\n");
-                } else {
-                    CarControl_emergencyStop(&gCar);
-                    gTask1State = TASK1_STATE_FAULT;
-                    Task1_setRedLed(true);
-                    UART_sendString("TASK1 TURN START FAILED\r\n");
-                }
-            } else if (gTask1BrakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES) {
-                CarControl_emergencyStop(&gCar);
-                gTask1State = TASK1_STATE_FAULT;
-                Task1_setRedLed(true);
-                UART_sendString("TASK1 BRAKE TIMEOUT\r\n");
-            }
-            break;
-
-        case TASK1_STATE_TURNING:
-            if (angleTurnResult == ANGLE_TURN_RESULT_COMPLETED) {
-                gLineTrackingEnabled = true;
-                gLineTrackingDebugEnabled = false;
-                gTask1LineSeenAfterTurn = false;
-                gTask1BlankCount = 0U;
-                gTask1AccelerationSamples = 0U;
-                LineTracking_resetPid();
-                gTask1State = TASK1_STATE_FOLLOW_TO_BLANK;
-                UART_sendString("TASK1 TURN DONE, FOLLOWING\r\n");
-            } else if ((angleTurnResult == ANGLE_TURN_RESULT_TIMEOUT) ||
-                       (angleTurnResult == ANGLE_TURN_RESULT_FAULT)) {
-                CarControl_emergencyStop(&gCar);
-                gTask1State = TASK1_STATE_FAULT;
-                Task1_setRedLed(true);
-                UART_sendString("TASK1 TURN FAULT\r\n");
-            }
-            break;
-
-        case TASK1_STATE_FOLLOW_TO_BLANK:
-            Task1_applyCruiseRamp();
-            activeCount = Task1_readActiveChannelCount();
-            if (activeCount > 0U) {
-                gTask1LineSeenAfterTurn = true;
-                gTask1BlankCount = 0U;
-            } else if (gTask1LineSeenAfterTurn) {
-                if (gTask1BlankCount < 255U) {
-                    gTask1BlankCount++;
-                }
-                if (gTask1BlankCount >= TASK1_BLANK_CONFIRM_SAMPLES) {
-                    gLineTrackingEnabled = false;
-                    LineTracking_resetPid();
-                    CarControl_stop(&gCar);
-                    gTask1BrakeSamples = 0U;
-                    gTask1State = TASK1_STATE_END_BRAKING;
-                    UART_sendString(gTask1Endpoint2 ?
-                        "TASK1 END2 BRAKING\r\n" :
-                        "TASK1 END1 BRAKING\r\n");
-                    break;
-                }
-            }
-            LineTracking_update();
-            break;
-
-        case TASK1_STATE_END_BRAKING:
-            gTask1BrakeSamples++;
-            if ((gTask1BrakeSamples >= TASK1_BRAKE_MIN_SAMPLES) &&
-                Task1_carStopped()) {
-                gTask1EndReverseSamples = 0U;
-                CarControl_setMotion(&gCar, CAR_CONTROL_BACKWARD,
-                    TASK1_END_REVERSE_RPM, 100U);
-                gTask1State = TASK1_STATE_END_REVERSING;
-                UART_sendString(gTask1Endpoint2 ?
-                    "TASK1 END2 REVERSE 75RPM 500ms\r\n" :
-                    "TASK1 END1 REVERSE 75RPM 500ms\r\n");
-            } else if (gTask1BrakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES) {
-                CarControl_emergencyStop(&gCar);
-                gTask1State = TASK1_STATE_FAULT;
-                Task1_setRedLed(true);
-                UART_sendString("TASK1 END BRAKE TIMEOUT\r\n");
-            }
-            break;
-
-        case TASK1_STATE_END_REVERSING:
-            CarControl_setMotion(&gCar, CAR_CONTROL_BACKWARD,
-                TASK1_END_REVERSE_RPM, 100U);
-            gTask1EndReverseSamples++;
-            if (gTask1EndReverseSamples >= TASK1_END_REVERSE_SAMPLES) {
-                /* Brake the reverse motion with the original encoder PID. */
-                CarControl_stop(&gCar);
-                gTask1BrakeSamples = 0U;
-                gTask1FinalBrakeSettledCount = 0U;
-                gTask1State = TASK1_STATE_END_FINAL_BRAKING;
-                UART_sendString(gTask1Endpoint2 ?
-                    "TASK1 END2 FINAL PID BRAKING\r\n" :
-                    "TASK1 END1 FINAL PID BRAKING\r\n");
-            }
-            break;
-
-        case TASK1_STATE_END_FINAL_BRAKING:
-            gTask1BrakeSamples++;
-            if (Task1_carStopped()) {
-                if (gTask1FinalBrakeSettledCount < 255U) {
-                    gTask1FinalBrakeSettledCount++;
-                }
-                if (gTask1FinalBrakeSettledCount >=
-                    TASK1_FINAL_BRAKE_SETTLE_SAMPLES) {
-                    /* Brake PID has finished; coast prevents noise re-triggering it. */
-                    CarControl_emergencyStop(&gCar);
-                    if (gTask1ReturnPhase) {
-                        gTask1State = TASK1_STATE_DONE;
-                        Task1_setRedLed(false);
-                        Task1_setGreenLed(true);
-                        UART_sendString("TASK1 RETURN DONE\r\n");
-                    } else {
-                        gTask1State = TASK1_STATE_WAIT_UNLOAD;
-                        Task1_setRedLed(true);
-                        Task1_setGreenLed(false);
-                        UART_sendString(gTask1Endpoint2 ?
-                            "TASK1 END2 WAIT UNLOAD\r\n" :
-                            "TASK1 END1 WAIT UNLOAD\r\n");
-                    }
-                }
-            } else {
-                gTask1FinalBrakeSettledCount = 0U;
-            }
-
-            if ((gTask1State == TASK1_STATE_END_FINAL_BRAKING) &&
-                (gTask1BrakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES)) {
-                CarControl_emergencyStop(&gCar);
-                gTask1State = TASK1_STATE_FAULT;
-                Task1_setRedLed(true);
-                UART_sendString("TASK1 FINAL BRAKE TIMEOUT\r\n");
-            }
-            break;
-
-        case TASK1_STATE_WAIT_UNLOAD:
-            if (statusReleased) {
-                Task1_setRedLed(false);
-                Task1_setGreenLed(false);
-                if (gMpu6050Ready && AngleTurnControl_start(&gAngleTurn,
-                        !gTask1Endpoint2, TASK1_RETURN_TURN_DEGREES,
-                        TASK1_LEFT_TURN_RPM)) {
-                    gTask1State = TASK1_STATE_RETURN_TURNING;
-                    UART_sendString("TASK1 RETURN TURN STARTED 180deg\r\n");
-                } else {
-                    CarControl_emergencyStop(&gCar);
-                    gTask1State = TASK1_STATE_FAULT;
-                    Task1_setRedLed(true);
-                    UART_sendString("TASK1 RETURN TURN START FAILED\r\n");
-                }
-            }
-            break;
-
-        case TASK1_STATE_RETURN_TURNING:
-            if (angleTurnResult == ANGLE_TURN_RESULT_COMPLETED) {
-                gTask1ReturnPhase = true;
-                gLineTrackingEnabled = true;
-                gLineTrackingDebugEnabled = false;
-                gTask1LineSeenAfterTurn = false;
-                gTask1IntersectionPartialCount = 0U;
-                gTask1BlankCount = 0U;
-                gTask1AccelerationSamples = 0U;
-                LineTracking_resetPid();
-                gTask1State = TASK1_STATE_FOLLOW_TO_INTERSECTION;
-                UART_sendString("TASK1 RETURN FOLLOWING\r\n");
-            } else if ((angleTurnResult == ANGLE_TURN_RESULT_TIMEOUT) ||
-                       (angleTurnResult == ANGLE_TURN_RESULT_FAULT)) {
-                CarControl_emergencyStop(&gCar);
-                gTask1State = TASK1_STATE_FAULT;
-                Task1_setRedLed(true);
-                UART_sendString("TASK1 RETURN TURN FAULT\r\n");
-            }
-            break;
-
-        case TASK1_STATE_DONE:
-        case TASK1_STATE_FAULT:
-        default:
-            break;
-    }
-}
-
 static bool Car_parseUnsignedValue(
     uint8_t *index, uint16_t maximum, uint16_t *value)
 {
@@ -1475,7 +1094,7 @@ static void Car_processUartCommand(void)
     }
 
     if (command == 'X') {
-        Task1_reset();
+        Task1Control_reset(&gTask1Control);
         Task2Control_reset(&gTask2Control);
         Task3Control_reset(&gTask3Control);
         AngleTurnControl_cancel(&gAngleTurn);
@@ -1899,7 +1518,7 @@ int main(void)
 
     gLineTrackingEnabled = false;
     gLineTrackingDebugEnabled = false;
-    gLineTrackingBaseSpeedRpm = TASK1_CRUISE_TARGET_RPM;
+    gLineTrackingBaseSpeedRpm = CAR_DEFAULT_SPEED_RPM;
     LineTracking_resetPid();
 
     UART_printBanner();
@@ -1918,7 +1537,7 @@ int main(void)
     }
     TaskManager_init(gOledReady);
     {
-        Task1Control_Config task2Io = {
+        Task1Control_Config taskIo = {
             .car = &gCar, .angleTurn = &gAngleTurn,
             .motors = {&gMotorA, &gMotorB, &gMotorC, &gMotorD},
             .setLineTrackingEnabled = Task1_lineTrackingSetEnabled,
@@ -1929,10 +1548,10 @@ int main(void)
             .setRedLed = Task1_setRedLed, .setGreenLed = Task1_setGreenLed,
             .log = UART_sendString,
         };
-        Task2Control_init(&gTask2Control, &task2Io);
-        Task3Control_init(&gTask3Control, &task2Io);
+        Task1Control_init(&gTask1Control, &taskIo);
+        Task2Control_init(&gTask2Control, &taskIo);
+        Task3Control_init(&gTask3Control, &taskIo);
     }
-    Task1_reset();
     UART_sendString(
         "GRAYSCALE OK  AD0=PB11 AD1=PB5 AD2=PA1 OUT=PA14\r\n");
     UART_sendString("Ready. Send H for commands.\r\n");
@@ -1986,7 +1605,6 @@ int main(void)
             }
 
             TaskManager_update();
-            Task1_update(angleTurnResult);
             {
                 TaskManager_Task activeTask =
                     TaskManager_getActiveTask();
@@ -2009,6 +1627,10 @@ int main(void)
                     gOpenMvTask3NumberPending = false;
                 }
                 gOpenMvTurnPending = TASK2_TURN_NONE;
+                Task1Control_update(&gTask1Control,
+                    activeTask, TaskManager_getTask1Endpoint(),
+                    statusPressed, statusReleased,
+                    gMpu6050Ready, angleTurnResult);
                 Task2Control_update(&gTask2Control,
                     activeTask, statusPressed, statusReleased,
                     task2NumberReceived,
@@ -2021,7 +1643,7 @@ int main(void)
             /* UART I remains available while Task1 waits for its load. */
             if (gLineTrackingEnabled &&
                 (TaskManager_getActiveTask() == TASK_MANAGER_TASK_1) &&
-                (gTask1State == TASK1_STATE_WAIT_LOAD)) {
+                !Task1Control_isActive(&gTask1Control)) {
                 LineTracking_update();
             }
 
