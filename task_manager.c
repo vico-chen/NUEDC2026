@@ -18,6 +18,7 @@ static TaskManager_ButtonState gTaskButton;
 static TaskManager_ButtonState gTask1EndpointButton;
 static TaskManager_ButtonState gStatusButton;
 static bool gStatusPressPending;
+static bool gStatusReleasePending;
 
 static bool TaskManager_readButtonPressed(void)
 {
@@ -40,27 +41,27 @@ static bool TaskManager_readStatusButtonPressed(void)
         GPIO_BTN_PIN_STATUS_PIN) == 0U);
 }
 
-/* Returns true once for each debounced press, never while the key is held. */
-static bool TaskManager_updateButton(
+/* Returns 1 for a press, -1 for a release, and 0 while unchanged. */
+static int8_t TaskManager_updateButton(
     TaskManager_ButtonState *button, bool rawPressed)
 {
     if (rawPressed != button->rawPressed) {
         button->rawPressed = rawPressed;
         button->debounceCount = 0U;
-        return false;
+        return 0;
     }
 
     if (button->debounceCount < TASK_MANAGER_DEBOUNCE_SAMPLES) {
         button->debounceCount++;
-        return false;
+        return 0;
     }
 
     if (button->stablePressed == button->rawPressed) {
-        return false;
+        return 0;
     }
 
     button->stablePressed = button->rawPressed;
-    return button->stablePressed;
+    return button->stablePressed ? 1 : -1;
 }
 
 static void TaskManager_showActiveTask(void)
@@ -124,24 +125,31 @@ void TaskManager_init(bool oledReady)
     gStatusButton.stablePressed = gStatusButton.rawPressed;
     gStatusButton.debounceCount = 0U;
     gStatusPressPending = false;
+    gStatusReleasePending = false;
     TaskManager_showActiveTask();
 }
 
 void TaskManager_update(void)
 {
     if (TaskManager_updateButton(
-            &gTaskButton, TaskManager_readButtonPressed())) {
+            &gTaskButton, TaskManager_readButtonPressed()) > 0) {
         TaskManager_advanceTask();
     }
 
     if (TaskManager_updateButton(&gTask1EndpointButton,
-            TaskManager_readTask1EndpointButtonPressed())) {
+            TaskManager_readTask1EndpointButtonPressed()) > 0) {
         TaskManager_toggleTask1Endpoint();
     }
 
-    if (TaskManager_updateButton(
-            &gStatusButton, TaskManager_readStatusButtonPressed())) {
-        gStatusPressPending = true;
+    {
+        int8_t statusEvent = TaskManager_updateButton(
+            &gStatusButton, TaskManager_readStatusButtonPressed());
+
+        if (statusEvent > 0) {
+            gStatusPressPending = true;
+        } else if (statusEvent < 0) {
+            gStatusReleasePending = true;
+        }
     }
 }
 
@@ -161,4 +169,12 @@ bool TaskManager_takeStatusPressed(void)
 
     gStatusPressPending = false;
     return pressed;
+}
+
+bool TaskManager_takeStatusReleased(void)
+{
+    bool released = gStatusReleasePending;
+
+    gStatusReleasePending = false;
+    return released;
 }

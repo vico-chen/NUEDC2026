@@ -21,5 +21,7 @@ TaskManager_Task TaskManager_getActiveTask(void);
 TaskManager_Task1Endpoint TaskManager_getTask1Endpoint(void);
 /* Returns true exactly once for each debounced, low-active PIN_STATUS press. */
 bool TaskManager_takeStatusPressed(void);
+/* Returns true exactly once for each debounced PIN_STATUS release. */
+bool TaskManager_takeStatusReleased(void);
 
 #endif /* TASK_MANAGER_H_ */

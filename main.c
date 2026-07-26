@@ -72,6 +72,7 @@
 #define TASK1_BRAKE_TIMEOUT_SAMPLES                 (80U)
 #define TASK1_LEFT_TURN_DEGREES                      (85.0f)
 #define TASK1_LEFT_TURN_RPM                          (100)
+#define TASK1_RETURN_TURN_DEGREES                    (180.0f)
 #define TASK1_BLANK_CONFIRM_SAMPLES                  (3U)
 #define TASK1_END_REVERSE_RPM                        (75)
 #define TASK1_END_REVERSE_SAMPLES                    (50U) /* 0.5 s */
@@ -261,6 +262,8 @@ typedef enum {
     TASK1_STATE_END_BRAKING,
     TASK1_STATE_END_REVERSING,
     TASK1_STATE_END_FINAL_BRAKING,
+    TASK1_STATE_WAIT_UNLOAD,
+    TASK1_STATE_RETURN_TURNING,
     TASK1_STATE_DONE,
     TASK1_STATE_FAULT
 } Task1_State;
@@ -274,6 +277,8 @@ static uint16_t gTask1BrakeSamples;
 static uint8_t gTask1EndReverseSamples;
 static uint8_t gTask1FinalBrakeSettledCount;
 static bool gTask1LineSeenAfterTurn;
+static bool gTask1ReturnPhase;
+static bool gTask1NextTurnRight;
 
 static bool gMotorStatusStreamEnabled;
 static bool gMotorStatusReportOnce;
@@ -754,6 +759,16 @@ static void Task1_setRedLed(bool enabled)
     }
 }
 
+static void Task1_setGreenLed(bool enabled)
+{
+    /* The car's green LED uses the same active-high wiring as the red LED. */
+    if (enabled) {
+        DL_GPIO_setPins(GPIO_LED_PORT, GPIO_LED_PIN_GREEN_PIN);
+    } else {
+        DL_GPIO_clearPins(GPIO_LED_PORT, GPIO_LED_PIN_GREEN_PIN);
+    }
+}
+
 static uint8_t Task1_readActiveChannelCount(void)
 {
     uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
@@ -818,12 +833,15 @@ static void Task1_reset(void)
     gTask1EndReverseSamples = 0U;
     gTask1FinalBrakeSettledCount = 0U;
     gTask1LineSeenAfterTurn = false;
+    gTask1ReturnPhase = false;
+    gTask1NextTurnRight = false;
     gLineTrackingEnabled = false;
     gLineTrackingDebugEnabled = false;
     LineTracking_resetPid();
     AngleTurnControl_cancel(&gAngleTurn);
     CarControl_stop(&gCar);
     Task1_setRedLed(false);
+    Task1_setGreenLed(false);
 }
 
 static void Task1_startEndpoint1(void)
@@ -840,9 +858,12 @@ static void Task1_startEndpoint1(void)
     gTask1EndReverseSamples = 0U;
     gTask1FinalBrakeSettledCount = 0U;
     gTask1LineSeenAfterTurn = false;
+    gTask1ReturnPhase = false;
+    gTask1NextTurnRight = false;
     LineTracking_resetPid();
     AngleTurnControl_cancel(&gAngleTurn);
     Task1_setRedLed(false);
+    Task1_setGreenLed(false);
     UART_sendString("TASK1 END1 STARTED target=300 ramp=200ms\r\n");
 }
 
@@ -860,6 +881,7 @@ static void Task1_applyCruiseRamp(void)
 static void Task1_update(AngleTurnControl_Result angleTurnResult)
 {
     bool statusPressed = TaskManager_takeStatusPressed();
+    bool statusReleased = TaskManager_takeStatusReleased();
     uint8_t activeCount;
 
     if (TaskManager_getActiveTask() != TASK_MANAGER_TASK_1) {
@@ -884,6 +906,7 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
                 gLineTrackingEnabled = false;
                 LineTracking_resetPid();
                 gTask1IntersectionAdvanceSamples = 0U;
+                gTask1NextTurnRight = gTask1ReturnPhase;
                 gTask1State = TASK1_STATE_INTERSECTION_ADVANCE;
                 CarControl_setMotion(&gCar, CAR_CONTROL_FORWARD,
                     TASK1_CRUISE_TARGET_RPM, 100U);
@@ -911,10 +934,12 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
             if ((gTask1BrakeSamples >= TASK1_BRAKE_MIN_SAMPLES) &&
                 Task1_carStopped()) {
                 if (gMpu6050Ready && AngleTurnControl_start(&gAngleTurn,
-                        true, TASK1_LEFT_TURN_DEGREES,
+                        !gTask1NextTurnRight, TASK1_LEFT_TURN_DEGREES,
                         TASK1_LEFT_TURN_RPM)) {
                     gTask1State = TASK1_STATE_TURNING;
-                    UART_sendString("TASK1 LEFT TURN STARTED 75deg\r\n");
+                    UART_sendString(gTask1NextTurnRight ?
+                        "TASK1 RIGHT TURN STARTED 85deg\r\n" :
+                        "TASK1 LEFT TURN STARTED 85deg\r\n");
                 } else {
                     CarControl_emergencyStop(&gCar);
                     gTask1State = TASK1_STATE_FAULT;
@@ -1012,19 +1037,67 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
                     TASK1_FINAL_BRAKE_SETTLE_SAMPLES) {
                     /* Brake PID has finished; coast prevents noise re-triggering it. */
                     CarControl_emergencyStop(&gCar);
-                    gTask1State = TASK1_STATE_DONE;
-                    Task1_setRedLed(true);
-                    UART_sendString("TASK1 END1 DONE\r\n");
+                    if (gTask1ReturnPhase) {
+                        gTask1State = TASK1_STATE_DONE;
+                        Task1_setRedLed(false);
+                        Task1_setGreenLed(true);
+                        UART_sendString("TASK1 RETURN DONE\r\n");
+                    } else {
+                        gTask1State = TASK1_STATE_WAIT_UNLOAD;
+                        Task1_setRedLed(true);
+                        Task1_setGreenLed(false);
+                        UART_sendString("TASK1 END1 WAIT UNLOAD\r\n");
+                    }
                 }
             } else {
                 gTask1FinalBrakeSettledCount = 0U;
             }
 
-            if (gTask1BrakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES) {
+            if ((gTask1State == TASK1_STATE_END_FINAL_BRAKING) &&
+                (gTask1BrakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES)) {
                 CarControl_emergencyStop(&gCar);
                 gTask1State = TASK1_STATE_FAULT;
                 Task1_setRedLed(true);
                 UART_sendString("TASK1 FINAL BRAKE TIMEOUT\r\n");
+            }
+            break;
+
+        case TASK1_STATE_WAIT_UNLOAD:
+            if (statusReleased) {
+                Task1_setRedLed(false);
+                Task1_setGreenLed(false);
+                if (gMpu6050Ready && AngleTurnControl_start(&gAngleTurn,
+                        true, TASK1_RETURN_TURN_DEGREES,
+                        TASK1_LEFT_TURN_RPM)) {
+                    gTask1State = TASK1_STATE_RETURN_TURNING;
+                    UART_sendString("TASK1 RETURN TURN STARTED 180deg\r\n");
+                } else {
+                    CarControl_emergencyStop(&gCar);
+                    gTask1State = TASK1_STATE_FAULT;
+                    Task1_setRedLed(true);
+                    UART_sendString("TASK1 RETURN TURN START FAILED\r\n");
+                }
+            }
+            break;
+
+        case TASK1_STATE_RETURN_TURNING:
+            if (angleTurnResult == ANGLE_TURN_RESULT_COMPLETED) {
+                gTask1ReturnPhase = true;
+                gLineTrackingEnabled = true;
+                gLineTrackingDebugEnabled = false;
+                gTask1LineSeenAfterTurn = false;
+                gTask1IntersectionPartialCount = 0U;
+                gTask1BlankCount = 0U;
+                gTask1AccelerationSamples = 0U;
+                LineTracking_resetPid();
+                gTask1State = TASK1_STATE_FOLLOW_TO_INTERSECTION;
+                UART_sendString("TASK1 RETURN FOLLOWING\r\n");
+            } else if ((angleTurnResult == ANGLE_TURN_RESULT_TIMEOUT) ||
+                       (angleTurnResult == ANGLE_TURN_RESULT_FAULT)) {
+                CarControl_emergencyStop(&gCar);
+                gTask1State = TASK1_STATE_FAULT;
+                Task1_setRedLed(true);
+                UART_sendString("TASK1 RETURN TURN FAULT\r\n");
             }
             break;
 
