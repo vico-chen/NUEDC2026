@@ -231,6 +231,28 @@ bool OLED_ShowTask2Turn(char direction)
     return OLED_writeString(34U, 3U, turnText);
 }
 
+bool OLED_ShowTask3Number(uint8_t number)
+{
+    char numberText[] = "TASK3 NUM0";
+
+    if (number > 9U) {
+        return false;
+    }
+    numberText[9] = (char) ('0' + number);
+    return OLED_writeString(34U, 3U, numberText);
+}
+
+bool OLED_ShowTask3Turn(char direction)
+{
+    char turnText[] = "TASK3 L   ";
+
+    if ((direction != 'L') && (direction != 'R')) {
+        return false;
+    }
+    turnText[6] = direction;
+    return OLED_writeString(34U, 3U, turnText);
+}
+
 bool OLED_ShowCalibration(uint8_t secondsRemaining)
 {
     char calibrationText[] = "CAL 5S";

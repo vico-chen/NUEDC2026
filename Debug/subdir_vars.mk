@@ -20,6 +20,7 @@ C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlan
 ../oled.c \
 ../task1_control.c \
 ../task2_control.c \
+../task3_control.c \
 ../task_manager.c 
 
 GEN_CMDS += \
@@ -42,6 +43,7 @@ C_DEPS += \
 ./oled.d \
 ./task1_control.d \
 ./task2_control.d \
+./task3_control.d \
 ./task_manager.d 
 
 GEN_OPTS += \
@@ -59,6 +61,7 @@ OBJS += \
 ./oled.o \
 ./task1_control.o \
 ./task2_control.o \
+./task3_control.o \
 ./task_manager.o 
 
 GEN_MISC_FILES += \
@@ -78,6 +81,7 @@ OBJS__QUOTED += \
 "oled.o" \
 "task1_control.o" \
 "task2_control.o" \
+"task3_control.o" \
 "task_manager.o" 
 
 GEN_MISC_FILES__QUOTED += \
@@ -97,6 +101,7 @@ C_DEPS__QUOTED += \
 "oled.d" \
 "task1_control.d" \
 "task2_control.d" \
+"task3_control.d" \
 "task_manager.d" 
 
 GEN_FILES__QUOTED += \
@@ -116,6 +121,7 @@ C_SRCS__QUOTED += \
 "../oled.c" \
 "../task1_control.c" \
 "../task2_control.c" \
+"../task3_control.c" \
 "../task_manager.c" 
 
 SYSCFG_SRCS__QUOTED += \
