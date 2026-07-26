@@ -38,6 +38,7 @@
 #include "grayscale_sensor.h"
 #include "oled.h"
 #include "task_manager.h"
+#include "task2_control.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -236,6 +237,11 @@ static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
 static volatile bool gMpu6050SampleDue;
+static volatile bool gOpenMvNumberPending;
+static volatile uint8_t gOpenMvNumber;
+static volatile Task2Control_Turn gOpenMvTurnPending;
+static volatile uint8_t gOpenMvDisplayPending;
+static uint8_t gOpenMvLastDisplayed;
 static bool gMpu6050Ready;
 static bool gOledReady;
 static bool gGrayscaleStreamEnabled;
@@ -251,6 +257,7 @@ static uint8_t gLineFilteredValues[GRAYSCALE_SENSOR_CHANNELS];
 static uint8_t gLinePendingValues[GRAYSCALE_SENSOR_CHANNELS];
 static uint8_t gLinePendingCount[GRAYSCALE_SENSOR_CHANNELS];
 static bool gLineFilterReady;
+static Task2Control gTask2Control;
 
 typedef enum {
     TASK1_STATE_WAIT_LOAD,
@@ -750,6 +757,17 @@ static void LineTracking_update(void)
     }
 }
 
+static void Task1_lineTrackingSetEnabled(bool enabled)
+{
+    gLineTrackingEnabled = enabled;
+    gLineTrackingDebugEnabled = false;
+}
+
+static void Task1_lineTrackingSetSpeed(int16_t speedRpm)
+{
+    gLineTrackingBaseSpeedRpm = speedRpm;
+}
+
 static void Task1_setRedLed(bool enabled)
 {
     /* The car's red LED is active-high: PB26 high turns it on. */
@@ -885,8 +903,8 @@ static void Task1_applyCruiseRamp(void)
 
 static void Task1_update(AngleTurnControl_Result angleTurnResult)
 {
-    bool statusPressed = TaskManager_takeStatusPressed();
-    bool statusReleased = TaskManager_takeStatusReleased();
+    bool statusPressed;
+    bool statusReleased;
     uint8_t activeCount;
 
     if (TaskManager_getActiveTask() != TASK_MANAGER_TASK_1) {
@@ -895,6 +913,9 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
         }
         return;
     }
+
+    statusPressed = TaskManager_takeStatusPressed();
+    statusReleased = TaskManager_takeStatusReleased();
 
     if (gTask1State == TASK1_STATE_WAIT_LOAD) {
         if (statusPressed) {
@@ -1779,6 +1800,20 @@ int main(void)
         UART_sendString("MPU6050 init failed.\r\n");
     }
     TaskManager_init(gOledReady);
+    {
+        Task1Control_Config task2Io = {
+            .car = &gCar, .angleTurn = &gAngleTurn,
+            .motors = {&gMotorA, &gMotorB, &gMotorC, &gMotorD},
+            .setLineTrackingEnabled = Task1_lineTrackingSetEnabled,
+            .setLineTrackingSpeed = Task1_lineTrackingSetSpeed,
+            .resetLineTracking = LineTracking_resetPid,
+            .updateLineTracking = LineTracking_update,
+            .readActiveChannelCount = Task1_readActiveChannelCount,
+            .setRedLed = Task1_setRedLed, .setGreenLed = Task1_setGreenLed,
+            .log = UART_sendString,
+        };
+        Task2Control_init(&gTask2Control, &task2Io);
+    }
     Task1_reset();
     UART_sendString(
         "GRAYSCALE OK  AD0=PB11 AD1=PB5 AD2=PA1 OUT=PA14\r\n");
@@ -1786,6 +1821,8 @@ int main(void)
 
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);
+    NVIC_ClearPendingIRQ(UART_OPENMV_INST_INT_IRQN);
+    NVIC_EnableIRQ(UART_OPENMV_INST_INT_IRQN);
     NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
     NVIC_EnableIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
     NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOA_INT_IRQN);
@@ -1834,18 +1871,59 @@ int main(void)
 
             TaskManager_update();
             Task1_update(angleTurnResult);
+            {
+                bool numberReceived = gOpenMvNumberPending;
+                Task2Control_Turn visualTurn = gOpenMvTurnPending;
+
+                gOpenMvNumberPending = false;
+                gOpenMvTurnPending = TASK2_TURN_NONE;
+                Task2Control_update(&gTask2Control,
+                    TaskManager_getActiveTask(),
+                    TaskManager_takeStatusPressed(),
+                    TaskManager_takeStatusReleased(), numberReceived,
+                    visualTurn, gMpu6050Ready, angleTurnResult);
+            }
 
             /* Keep the UART I command available while no automatic Task1 runs. */
             if (gLineTrackingEnabled &&
-                ((TaskManager_getActiveTask() != TASK_MANAGER_TASK_1) ||
-                 (gTask1State == TASK1_STATE_WAIT_LOAD))) {
+                ((TaskManager_getActiveTask() == TASK_MANAGER_TASK_3) ||
+                 ((TaskManager_getActiveTask() == TASK_MANAGER_TASK_1) &&
+                  (gTask1State == TASK1_STATE_WAIT_LOAD)))) {
                 LineTracking_update();
+            }
+
+            if (TaskManager_getActiveTask() != TASK_MANAGER_TASK_2) {
+                gOpenMvLastDisplayed = 0U;
             }
         }
 
         if (gUartCommandReady) {
             Car_processUartCommand();
             gUartCommandReady = false;
+        }
+
+        /*
+         * OLED I2C writes are blocking, so service them outside the 10 ms
+         * motion-control block. Repeated OpenMV frames do not redraw the
+         * same message.
+         */
+        if (gOpenMvDisplayPending != 0U) {
+            uint8_t displayCode = gOpenMvDisplayPending;
+
+            gOpenMvDisplayPending = 0U;
+            if ((TaskManager_getActiveTask() == TASK_MANAGER_TASK_2) &&
+                gOledReady && (displayCode != gOpenMvLastDisplayed)) {
+                if ((displayCode >= (uint8_t) '0') &&
+                    (displayCode <= (uint8_t) '9')) {
+                    gOledReady = OLED_ShowTask2Number(
+                        (uint8_t) (displayCode - (uint8_t) '0'));
+                } else {
+                    gOledReady = OLED_ShowTask2Turn((char) displayCode);
+                }
+                if (gOledReady) {
+                    gOpenMvLastDisplayed = displayCode;
+                }
+            }
         }
 
         UART_serviceMotorStatus();
@@ -1919,5 +1997,27 @@ void UART_0_INST_IRQHandler(void)
             break;
         default:
             break;
+    }
+}
+
+void UART_OPENMV_INST_IRQHandler(void)
+{
+    uint8_t rxData;
+
+    if (DL_UART_Main_getPendingInterrupt(UART_OPENMV_INST) !=
+        DL_UART_MAIN_IIDX_RX) {
+        return;
+    }
+    rxData = DL_UART_Main_receiveData(UART_OPENMV_INST);
+    if ((rxData >= (uint8_t) '0') && (rxData <= (uint8_t) '9')) {
+        gOpenMvNumber = (uint8_t) (rxData - (uint8_t) '0');
+        gOpenMvNumberPending = true;
+        gOpenMvDisplayPending = rxData;
+    } else if ((rxData == (uint8_t) 'L') || (rxData == (uint8_t) 'l')) {
+        gOpenMvTurnPending = TASK2_TURN_LEFT;
+        gOpenMvDisplayPending = (uint8_t) 'L';
+    } else if ((rxData == (uint8_t) 'R') || (rxData == (uint8_t) 'r')) {
+        gOpenMvTurnPending = TASK2_TURN_RIGHT;
+        gOpenMvDisplayPending = (uint8_t) 'R';
     }
 }

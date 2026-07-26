@@ -7,6 +7,8 @@
 "./motor_control.o"
 "./mpu6050_angle.o"
 "./oled.o"
+"./task1_control.o"
+"./task2_control.o"
 "./task_manager.o"
 -l"./device_linker.cmd"
 -ldevice.cmd.genlibs

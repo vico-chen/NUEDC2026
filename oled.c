@@ -100,6 +100,7 @@ static const uint8_t *OLED_getGlyph(char character)
     static const uint8_t K[5] = {0x7FU, 0x08U, 0x14U, 0x22U, 0x41U};
     static const uint8_t L[5] = {0x7FU, 0x40U, 0x40U, 0x40U, 0x40U};
     static const uint8_t N[5] = {0x7FU, 0x04U, 0x08U, 0x10U, 0x7FU};
+    static const uint8_t R[5] = {0x7FU, 0x09U, 0x19U, 0x29U, 0x46U};
     static const uint8_t S[5] = {0x46U, 0x49U, 0x49U, 0x49U, 0x31U};
     static const uint8_t T[5] = {0x01U, 0x01U, 0x7FU, 0x01U, 0x01U};
     static const uint8_t one[5] = {0x00U, 0x42U, 0x7FU, 0x40U, 0x00U};
@@ -107,13 +108,23 @@ static const uint8_t *OLED_getGlyph(char character)
     static const uint8_t three[5] = {0x21U, 0x41U, 0x45U, 0x4BU, 0x31U};
     static const uint8_t four[5] = {0x18U, 0x14U, 0x12U, 0x7FU, 0x10U};
     static const uint8_t five[5] = {0x27U, 0x45U, 0x45U, 0x45U, 0x39U};
+    static const uint8_t zero[5] = {0x3EU, 0x51U, 0x49U, 0x45U, 0x3EU};
+    static const uint8_t six[5] = {0x3CU, 0x4AU, 0x49U, 0x49U, 0x30U};
+    static const uint8_t seven[5] = {0x01U, 0x71U, 0x09U, 0x05U, 0x03U};
+    static const uint8_t eight[5] = {0x36U, 0x49U, 0x49U, 0x49U, 0x36U};
+    static const uint8_t nine[5] = {0x06U, 0x49U, 0x49U, 0x29U, 0x1EU};
 
     switch (character) {
+        case '0': return zero;
         case '1': return one;
         case '2': return two;
         case '3': return three;
         case '4': return four;
         case '5': return five;
+        case '6': return six;
+        case '7': return seven;
+        case '8': return eight;
+        case '9': return nine;
         case 'A': return A;
         case 'C': return C;
         case 'D': return D;
@@ -121,6 +132,7 @@ static const uint8_t *OLED_getGlyph(char character)
         case 'K': return K;
         case 'L': return L;
         case 'N': return N;
+        case 'R': return R;
         case 'S': return S;
         case 'T': return T;
         default: return space;
@@ -190,6 +202,33 @@ bool OLED_ShowTask1Endpoint(uint8_t endpointNumber)
 
     endpointText[9] = (char) ('0' + endpointNumber);
     return OLED_clear() && OLED_writeString(34U, 3U, endpointText);
+}
+
+bool OLED_ShowTask2Number(uint8_t number)
+{
+    char numberText[] = "TASK2 NUM0";
+
+    if (number > 9U) {
+        return false;
+    }
+    numberText[9] = (char) ('0' + number);
+    /*
+     * Do not clear the whole screen here. OpenMV may repeat a result every
+     * frame; a full 1024-byte blocking clear would delay the 10 ms control
+     * loop. This fixed-width string overwrites the previous Task2 message.
+     */
+    return OLED_writeString(34U, 3U, numberText);
+}
+
+bool OLED_ShowTask2Turn(char direction)
+{
+    char turnText[] = "TASK2 L   ";
+
+    if ((direction != 'L') && (direction != 'R')) {
+        return false;
+    }
+    turnText[6] = direction;
+    return OLED_writeString(34U, 3U, turnText);
 }
 
 bool OLED_ShowCalibration(uint8_t secondsRemaining)

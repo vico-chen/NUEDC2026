@@ -263,6 +263,10 @@ UART1.txPinConfig.$name        = "ti_driverlib_gpio_GPIOPinGeneric2";
 UART1.rxPinConfig.$name        = "ti_driverlib_gpio_GPIOPinGeneric3";
 
 UART2.$name                            = "UART_OPENMV";
+UART2.enabledInterrupts                = ["RX"];
+UART2.targetBaudRate                   = 115200;
+UART2.peripheral.rxPin.$assign         = "PA9";
+UART2.peripheral.txPin.$assign         = "PB4";
 UART2.txPinConfig.direction            = scripting.forceWrite("OUTPUT");
 UART2.txPinConfig.hideOutputInversion  = scripting.forceWrite(false);
 UART2.txPinConfig.onlyInternalResistor = scripting.forceWrite(false);
