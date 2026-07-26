@@ -277,6 +277,7 @@ static uint16_t gTask1BrakeSamples;
 static uint8_t gTask1EndReverseSamples;
 static uint8_t gTask1FinalBrakeSettledCount;
 static bool gTask1LineSeenAfterTurn;
+static bool gTask1Endpoint2;
 static bool gTask1ReturnPhase;
 static bool gTask1NextTurnRight;
 
@@ -833,6 +834,7 @@ static void Task1_reset(void)
     gTask1EndReverseSamples = 0U;
     gTask1FinalBrakeSettledCount = 0U;
     gTask1LineSeenAfterTurn = false;
+    gTask1Endpoint2 = false;
     gTask1ReturnPhase = false;
     gTask1NextTurnRight = false;
     gLineTrackingEnabled = false;
@@ -844,7 +846,7 @@ static void Task1_reset(void)
     Task1_setGreenLed(false);
 }
 
-static void Task1_startEndpoint1(void)
+static void Task1_start(TaskManager_Task1Endpoint endpoint)
 {
     gLineTrackingBaseSpeedRpm = 0;
     gLineTrackingEnabled = true;
@@ -858,13 +860,16 @@ static void Task1_startEndpoint1(void)
     gTask1EndReverseSamples = 0U;
     gTask1FinalBrakeSettledCount = 0U;
     gTask1LineSeenAfterTurn = false;
+    gTask1Endpoint2 = (endpoint == TASK_MANAGER_TASK1_ENDPOINT_2);
     gTask1ReturnPhase = false;
     gTask1NextTurnRight = false;
     LineTracking_resetPid();
     AngleTurnControl_cancel(&gAngleTurn);
     Task1_setRedLed(false);
     Task1_setGreenLed(false);
-    UART_sendString("TASK1 END1 STARTED target=300 ramp=200ms\r\n");
+    UART_sendString(gTask1Endpoint2 ?
+        "TASK1 END2 STARTED target=300 ramp=200ms\r\n" :
+        "TASK1 END1 STARTED target=300 ramp=200ms\r\n");
 }
 
 static void Task1_applyCruiseRamp(void)
@@ -892,9 +897,8 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
     }
 
     if (gTask1State == TASK1_STATE_WAIT_LOAD) {
-        if (statusPressed && (TaskManager_getTask1Endpoint() ==
-                TASK_MANAGER_TASK1_ENDPOINT_1)) {
-            Task1_startEndpoint1();
+        if (statusPressed) {
+            Task1_start(TaskManager_getTask1Endpoint());
         }
         return;
     }
@@ -906,7 +910,8 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
                 gLineTrackingEnabled = false;
                 LineTracking_resetPid();
                 gTask1IntersectionAdvanceSamples = 0U;
-                gTask1NextTurnRight = gTask1ReturnPhase;
+                gTask1NextTurnRight = gTask1ReturnPhase ?
+                    !gTask1Endpoint2 : gTask1Endpoint2;
                 gTask1State = TASK1_STATE_INTERSECTION_ADVANCE;
                 CarControl_setMotion(&gCar, CAR_CONTROL_FORWARD,
                     TASK1_CRUISE_TARGET_RPM, 100U);
@@ -989,7 +994,9 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
                     CarControl_stop(&gCar);
                     gTask1BrakeSamples = 0U;
                     gTask1State = TASK1_STATE_END_BRAKING;
-                    UART_sendString("TASK1 END1 BRAKING\r\n");
+                    UART_sendString(gTask1Endpoint2 ?
+                        "TASK1 END2 BRAKING\r\n" :
+                        "TASK1 END1 BRAKING\r\n");
                     break;
                 }
             }
@@ -1004,7 +1011,9 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
                 CarControl_setMotion(&gCar, CAR_CONTROL_BACKWARD,
                     TASK1_END_REVERSE_RPM, 100U);
                 gTask1State = TASK1_STATE_END_REVERSING;
-                UART_sendString("TASK1 END1 REVERSE 75RPM 500ms\r\n");
+                UART_sendString(gTask1Endpoint2 ?
+                    "TASK1 END2 REVERSE 75RPM 500ms\r\n" :
+                    "TASK1 END1 REVERSE 75RPM 500ms\r\n");
             } else if (gTask1BrakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES) {
                 CarControl_emergencyStop(&gCar);
                 gTask1State = TASK1_STATE_FAULT;
@@ -1023,7 +1032,9 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
                 gTask1BrakeSamples = 0U;
                 gTask1FinalBrakeSettledCount = 0U;
                 gTask1State = TASK1_STATE_END_FINAL_BRAKING;
-                UART_sendString("TASK1 END1 FINAL PID BRAKING\r\n");
+                UART_sendString(gTask1Endpoint2 ?
+                    "TASK1 END2 FINAL PID BRAKING\r\n" :
+                    "TASK1 END1 FINAL PID BRAKING\r\n");
             }
             break;
 
@@ -1046,7 +1057,9 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
                         gTask1State = TASK1_STATE_WAIT_UNLOAD;
                         Task1_setRedLed(true);
                         Task1_setGreenLed(false);
-                        UART_sendString("TASK1 END1 WAIT UNLOAD\r\n");
+                        UART_sendString(gTask1Endpoint2 ?
+                            "TASK1 END2 WAIT UNLOAD\r\n" :
+                            "TASK1 END1 WAIT UNLOAD\r\n");
                     }
                 }
             } else {
@@ -1067,7 +1080,7 @@ static void Task1_update(AngleTurnControl_Result angleTurnResult)
                 Task1_setRedLed(false);
                 Task1_setGreenLed(false);
                 if (gMpu6050Ready && AngleTurnControl_start(&gAngleTurn,
-                        true, TASK1_RETURN_TURN_DEGREES,
+                        !gTask1Endpoint2, TASK1_RETURN_TURN_DEGREES,
                         TASK1_LEFT_TURN_RPM)) {
                     gTask1State = TASK1_STATE_RETURN_TURNING;
                     UART_sendString("TASK1 RETURN TURN STARTED 180deg\r\n");
