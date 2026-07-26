@@ -13,6 +13,7 @@ typedef struct {
 
 static TaskManager_Task gActiveTask;
 static TaskManager_Task1Endpoint gTask1Endpoint;
+static TaskManager_Task1Endpoint gTask2Endpoint;
 static bool gOledReady;
 static TaskManager_ButtonState gTaskButton;
 static TaskManager_ButtonState gTask1EndpointButton;
@@ -68,7 +69,11 @@ static void TaskManager_showActiveTask(void)
 {
     if (gOledReady) {
         if (gActiveTask == TASK_MANAGER_TASK_1) {
-            gOledReady = OLED_ShowTask1Endpoint((uint8_t) gTask1Endpoint);
+            gOledReady = OLED_ShowTaskEndpoint(1U,
+                (uint8_t) gTask1Endpoint);
+        } else if (gActiveTask == TASK_MANAGER_TASK_2) {
+            gOledReady = OLED_ShowTaskEndpoint(2U,
+                (uint8_t) gTask2Endpoint);
         } else {
             gOledReady = OLED_ShowTask((uint8_t) gActiveTask);
         }
@@ -85,17 +90,24 @@ static void TaskManager_advanceTask(void)
     TaskManager_showActiveTask();
 }
 
-static void TaskManager_toggleTask1Endpoint(void)
+static void TaskManager_toggleActiveEndpoint(void)
 {
-    if (gTask1Endpoint == TASK_MANAGER_TASK1_ENDPOINT_1) {
-        gTask1Endpoint = TASK_MANAGER_TASK1_ENDPOINT_2;
-    } else {
-        gTask1Endpoint = TASK_MANAGER_TASK1_ENDPOINT_1;
-    }
+    TaskManager_Task1Endpoint *endpoint;
 
     if (gActiveTask == TASK_MANAGER_TASK_1) {
-        TaskManager_showActiveTask();
+        endpoint = &gTask1Endpoint;
+    } else if (gActiveTask == TASK_MANAGER_TASK_2) {
+        endpoint = &gTask2Endpoint;
+    } else {
+        return;
     }
+
+    if (*endpoint == TASK_MANAGER_TASK1_ENDPOINT_1) {
+        *endpoint = TASK_MANAGER_TASK1_ENDPOINT_2;
+    } else {
+        *endpoint = TASK_MANAGER_TASK1_ENDPOINT_1;
+    }
+    TaskManager_showActiveTask();
 }
 
 void TaskManager_init(bool oledReady)
@@ -114,6 +126,7 @@ void TaskManager_init(bool oledReady)
     gOledReady = oledReady;
     gActiveTask = TASK_MANAGER_TASK_1;
     gTask1Endpoint = TASK_MANAGER_TASK1_ENDPOINT_1;
+    gTask2Endpoint = TASK_MANAGER_TASK1_ENDPOINT_1;
     gTaskButton.rawPressed = TaskManager_readButtonPressed();
     gTaskButton.stablePressed = gTaskButton.rawPressed;
     gTaskButton.debounceCount = 0U;
@@ -138,7 +151,7 @@ void TaskManager_update(void)
 
     if (TaskManager_updateButton(&gTask1EndpointButton,
             TaskManager_readTask1EndpointButtonPressed()) > 0) {
-        TaskManager_toggleTask1Endpoint();
+        TaskManager_toggleActiveEndpoint();
     }
 
     {
@@ -161,6 +174,11 @@ TaskManager_Task TaskManager_getActiveTask(void)
 TaskManager_Task1Endpoint TaskManager_getTask1Endpoint(void)
 {
     return gTask1Endpoint;
+}
+
+TaskManager_Task1Endpoint TaskManager_getTask2Endpoint(void)
+{
+    return gTask2Endpoint;
 }
 
 bool TaskManager_takeStatusPressed(void)

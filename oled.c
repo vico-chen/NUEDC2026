@@ -192,16 +192,23 @@ bool OLED_ShowTask(uint8_t taskNumber)
     return OLED_clear() && OLED_writeString(46U, 3U, taskText);
 }
 
-bool OLED_ShowTask1Endpoint(uint8_t endpointNumber)
+bool OLED_ShowTaskEndpoint(uint8_t taskNumber, uint8_t endpointNumber)
 {
     char endpointText[] = "TASK1 END1";
 
-    if ((endpointNumber < 1U) || (endpointNumber > 2U)) {
+    if ((taskNumber < 1U) || (taskNumber > 2U) ||
+        (endpointNumber < 1U) || (endpointNumber > 2U)) {
         return false;
     }
 
+    endpointText[4] = (char) ('0' + taskNumber);
     endpointText[9] = (char) ('0' + endpointNumber);
     return OLED_clear() && OLED_writeString(34U, 3U, endpointText);
+}
+
+bool OLED_ShowTask1Endpoint(uint8_t endpointNumber)
+{
+    return OLED_ShowTaskEndpoint(1U, endpointNumber);
 }
 
 bool OLED_ShowTask2Number(uint8_t number)

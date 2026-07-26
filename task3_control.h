@@ -2,7 +2,12 @@
 #define TASK3_CONTROL_H_
 
 #include "task1_control.h"
-#include "task2_control.h"
+
+typedef enum {
+    TASK3_TURN_NONE,
+    TASK3_TURN_LEFT,
+    TASK3_TURN_RIGHT
+} Task3Control_Turn;
 
 typedef enum {
     TASK3_WAIT_INFO,
@@ -23,7 +28,7 @@ typedef enum {
 typedef struct {
     Task1Control_Config io;
     Task3Control_State state;
-    Task2Control_Turn pendingTurn;
+    Task3Control_Turn pendingTurn;
     uint8_t completedTurns;
     uint8_t completedReturnTurns;
     uint8_t rampSamples;
@@ -44,7 +49,7 @@ void Task3Control_init(Task3Control *control,
 void Task3Control_reset(Task3Control *control);
 void Task3Control_update(Task3Control *control, TaskManager_Task task,
     bool statusPressed, bool statusReleased, bool numberReceived,
-    Task2Control_Turn visualTurn, bool mpuReady,
+    Task3Control_Turn visualTurn, bool mpuReady,
     AngleTurnControl_Result turnResult);
 
 #endif /* TASK3_CONTROL_H_ */

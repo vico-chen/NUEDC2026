@@ -6,6 +6,7 @@
 
 bool OLED_Init(void);
 bool OLED_ShowTask(uint8_t taskNumber);
+bool OLED_ShowTaskEndpoint(uint8_t taskNumber, uint8_t endpointNumber);
 bool OLED_ShowTask1Endpoint(uint8_t endpointNumber);
 bool OLED_ShowTask2Number(uint8_t number);
 bool OLED_ShowTask2Turn(char direction);

@@ -84,7 +84,7 @@ task3_control.o: ../task3_control.c ../task3_control.h ../task1_control.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h \
- ../task_manager.h ../task2_control.h
+ ../task_manager.h
 ../task3_control.h:
 ../task1_control.h:
 ../angle_turn_control.h:
@@ -173,4 +173,3 @@ C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h:
 ../task_manager.h:
-../task2_control.h:

@@ -75,7 +75,7 @@ static bool Task3Control_detectIntersection(
     return false;
 }
 
-static Task2Control_Turn Task3Control_detectReturnJunction(
+static Task3Control_Turn Task3Control_detectReturnJunction(
     uint8_t activeMask)
 {
     bool leftDetected =
@@ -90,9 +90,9 @@ static Task2Control_Turn Task3Control_detectReturnJunction(
      * are active, the direction is ambiguous and the car keeps following.
      */
     if (leftDetected == rightDetected) {
-        return TASK2_TURN_NONE;
+        return TASK3_TURN_NONE;
     }
-    return leftDetected ? TASK2_TURN_LEFT : TASK2_TURN_RIGHT;
+    return leftDetected ? TASK3_TURN_LEFT : TASK3_TURN_RIGHT;
 }
 
 static bool Task3Control_returnJunctionPresent(uint8_t activeMask)
@@ -128,7 +128,7 @@ static void Task3Control_beginPidBrake(Task3Control *control,
 void Task3Control_reset(Task3Control *control)
 {
     control->state = TASK3_WAIT_INFO;
-    control->pendingTurn = TASK2_TURN_NONE;
+    control->pendingTurn = TASK3_TURN_NONE;
     control->completedTurns = 0U;
     control->completedReturnTurns = 0U;
     control->rampSamples = 0U;
@@ -159,7 +159,7 @@ void Task3Control_init(Task3Control *control,
 
 void Task3Control_update(Task3Control *control, TaskManager_Task task,
     bool statusPressed, bool statusReleased, bool numberReceived,
-    Task2Control_Turn visualTurn, bool mpuReady,
+    Task3Control_Turn visualTurn, bool mpuReady,
     AngleTurnControl_Result turnResult)
 {
     uint8_t activeCount;
@@ -177,14 +177,14 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
         Task3Control_log(control, "TASK3 VISION NUMBER READY\r\n");
     }
 
-    if ((visualTurn != TASK2_TURN_NONE) &&
+    if ((visualTurn != TASK3_TURN_NONE) &&
         (control->state == TASK3_FOLLOW) &&
         (control->completedTurns < TASK3_REQUIRED_TURNS) &&
         control->intersectionArmed &&
-        (control->pendingTurn == TASK2_TURN_NONE)) {
+        (control->pendingTurn == TASK3_TURN_NONE)) {
         control->pendingTurn = visualTurn;
         Task3Control_log(control,
-            (visualTurn == TASK2_TURN_LEFT) ?
+            (visualTurn == TASK3_TURN_LEFT) ?
             "TASK3 NEXT LEFT\r\n" : "TASK3 NEXT RIGHT\r\n");
     }
 
@@ -216,7 +216,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             if (control->intersectionArmed &&
                 Task3Control_detectIntersection(
                     control, activeCount) &&
-                (control->pendingTurn != TASK2_TURN_NONE) &&
+                (control->pendingTurn != TASK3_TURN_NONE) &&
                 (control->completedTurns < TASK3_REQUIRED_TURNS)) {
                 control->intersectionArmed = false;
                 control->io.setLineTrackingEnabled(false);
@@ -254,7 +254,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
 
         case TASK3_RETURN_FOLLOW:
         {
-            Task2Control_Turn returnTurn;
+            Task3Control_Turn returnTurn;
 
             activeMask = control->io.readActiveChannelMask();
             activeCount =
@@ -274,7 +274,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             if ((control->completedReturnTurns <
                     TASK3_REQUIRED_TURNS) &&
                 control->intersectionArmed &&
-                (returnTurn != TASK2_TURN_NONE)) {
+                (returnTurn != TASK3_TURN_NONE)) {
                 control->pendingTurn = returnTurn;
                 control->intersectionArmed = false;
                 control->io.setLineTrackingEnabled(false);
@@ -285,7 +285,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                     CAR_CONTROL_FORWARD,
                     TASK3_RETURN_CRUISE_RPM, 100U);
                 Task3Control_log(control,
-                    (returnTurn == TASK2_TURN_LEFT) ?
+                    (returnTurn == TASK3_TURN_LEFT) ?
                     "TASK3 RETURN T LEFT, ADVANCE\r\n" :
                     "TASK3 RETURN T RIGHT, ADVANCE\r\n");
                 break;
@@ -336,13 +336,13 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                     TASK3_MIN_BRAKE_SAMPLES) &&
                 Task3Control_carStopped(control)) {
                 bool turnLeft =
-                    (control->pendingTurn == TASK2_TURN_LEFT);
+                    (control->pendingTurn == TASK3_TURN_LEFT);
 
                 if (mpuReady &&
                     AngleTurnControl_start(control->io.angleTurn,
                         turnLeft, TASK3_TURN_DEGREES,
                         TASK3_TURN_RPM)) {
-                    control->pendingTurn = TASK2_TURN_NONE;
+                    control->pendingTurn = TASK3_TURN_NONE;
                     control->uTurn = false;
                     control->state = TASK3_TURNING;
                     Task3Control_log(control, turnLeft ?
@@ -490,7 +490,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             if (statusReleased) {
                 control->io.setRedLed(false);
                 control->io.setGreenLed(false);
-                control->pendingTurn = TASK2_TURN_NONE;
+                control->pendingTurn = TASK3_TURN_NONE;
                 control->completedReturnTurns = 0U;
                 control->blankSamples = 0U;
                 control->lineSeenAfterFinalTurn = false;

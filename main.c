@@ -225,11 +225,10 @@ static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
 static volatile bool gMpu6050SampleDue;
-static volatile bool gOpenMvTask2NumberPending;
 static volatile bool gOpenMvTask3NumberPending;
 static volatile bool gOpenMvNumberValid;
 static volatile uint8_t gOpenMvNumber;
-static volatile Task2Control_Turn gOpenMvTurnPending;
+static volatile Task3Control_Turn gOpenMvTurnPending;
 static volatile uint8_t gOpenMvDisplayPending;
 static uint8_t gOpenMvLastDisplayed;
 static uint8_t gOpenMvLastDisplayedTask;
@@ -1626,29 +1625,23 @@ int main(void)
                     TaskManager_takeStatusPressed();
                 bool statusReleased =
                     TaskManager_takeStatusReleased();
-                bool task2NumberReceived =
-                    (activeTask == TASK_MANAGER_TASK_2) &&
-                    gOpenMvTask2NumberPending;
                 bool task3NumberReceived =
                     (activeTask == TASK_MANAGER_TASK_3) &&
                     gOpenMvTask3NumberPending;
-                Task2Control_Turn visualTurn = gOpenMvTurnPending;
+                Task3Control_Turn visualTurn = gOpenMvTurnPending;
 
-                if (task2NumberReceived) {
-                    gOpenMvTask2NumberPending = false;
-                }
                 if (task3NumberReceived) {
                     gOpenMvTask3NumberPending = false;
                 }
-                gOpenMvTurnPending = TASK2_TURN_NONE;
+                gOpenMvTurnPending = TASK3_TURN_NONE;
                 Task1Control_update(&gTask1Control,
                     activeTask, TaskManager_getTask1Endpoint(),
                     statusPressed, statusReleased,
                     gMpu6050Ready, angleTurnResult);
                 Task2Control_update(&gTask2Control,
-                    activeTask, statusPressed, statusReleased,
-                    task2NumberReceived,
-                    visualTurn, gMpu6050Ready, angleTurnResult);
+                    activeTask, TaskManager_getTask2Endpoint(),
+                    statusPressed, statusReleased,
+                    gMpu6050Ready, angleTurnResult);
                 Task3Control_update(&gTask3Control,
                     activeTask, statusPressed, statusReleased,
                     task3NumberReceived,
@@ -1668,10 +1661,8 @@ int main(void)
                 gOpenMvLastDisplayedTask =
                     (uint8_t) TaskManager_getActiveTask();
                 if (gOpenMvNumberValid &&
-                    ((TaskManager_getActiveTask() ==
-                        TASK_MANAGER_TASK_2) ||
-                     (TaskManager_getActiveTask() ==
-                        TASK_MANAGER_TASK_3))) {
+                    (TaskManager_getActiveTask() ==
+                        TASK_MANAGER_TASK_3)) {
                     gOpenMvDisplayPending = (uint8_t)
                         ((uint8_t) '0' + gOpenMvNumber);
                 }
@@ -1692,27 +1683,19 @@ int main(void)
             uint8_t displayCode = gOpenMvDisplayPending;
 
             gOpenMvDisplayPending = 0U;
-            if (((TaskManager_getActiveTask() ==
-                    TASK_MANAGER_TASK_2) ||
-                 (TaskManager_getActiveTask() ==
-                    TASK_MANAGER_TASK_3)) &&
+            if ((TaskManager_getActiveTask() ==
+                    TASK_MANAGER_TASK_3) &&
                 gOledReady &&
                 (displayCode != gOpenMvLastDisplayed)) {
-                bool task2Selected =
-                    (TaskManager_getActiveTask() ==
-                    TASK_MANAGER_TASK_2);
-
                 if ((displayCode >= (uint8_t) '0') &&
                     (displayCode <= (uint8_t) '9')) {
                     uint8_t number = (uint8_t)
                         (displayCode - (uint8_t) '0');
 
-                    gOledReady = task2Selected ?
-                        OLED_ShowTask2Number(number) :
+                    gOledReady =
                         OLED_ShowTask3Number(number);
                 } else {
-                    gOledReady = task2Selected ?
-                        OLED_ShowTask2Turn((char) displayCode) :
+                    gOledReady =
                         OLED_ShowTask3Turn((char) displayCode);
                 }
                 if (gOledReady) {
@@ -1821,20 +1804,14 @@ void UART_OPENMV_INST_IRQHandler(void)
 
     if ((rxData >= (uint8_t) '0') && (rxData <= (uint8_t) '9')) {
         gOpenMvNumber = (uint8_t) (rxData - (uint8_t) '0');
-        /*
-         * Task selection cycles through Task2 before Task3. Keep an
-         * independent event for each task so Task2 cannot consume Task3's
-         * initial vision result while the user is switching modes.
-         */
-        gOpenMvTask2NumberPending = true;
         gOpenMvTask3NumberPending = true;
         gOpenMvNumberValid = true;
         gOpenMvDisplayPending = rxData;
     } else if ((rxData == (uint8_t) 'L') || (rxData == (uint8_t) 'l')) {
-        gOpenMvTurnPending = TASK2_TURN_LEFT;
+        gOpenMvTurnPending = TASK3_TURN_LEFT;
         gOpenMvDisplayPending = (uint8_t) 'L';
     } else if ((rxData == (uint8_t) 'R') || (rxData == (uint8_t) 'r')) {
-        gOpenMvTurnPending = TASK2_TURN_RIGHT;
+        gOpenMvTurnPending = TASK3_TURN_RIGHT;
         gOpenMvDisplayPending = (uint8_t) 'R';
     }
 }

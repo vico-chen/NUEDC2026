@@ -1,84 +1,453 @@
 #include "task2_control.h"
 
-#define T2_CRUISE 110
-#define T2_RAMP 20U
-#define T2_ADVANCE 22U
-#define T2_MIN_BRAKE 15U
-#define T2_BRAKE_TIMEOUT 80U
-#define T2_TURN_DEG 85.0f
-#define T2_TURN_RPM 100
-#define T2_REVERSE_RPM 75
-#define T2_REVERSE_TICKS 50U
+#define TASK2_CRUISE_RPM                    (90)
+#define TASK2_RAMP_SAMPLES                  (20U) /* 0.20 s */
+#define TASK2_TARGET_INTERSECTION_NUMBER    (2U)
+#define TASK2_INTERSECTION_THRESHOLD        (6U)
+#define TASK2_INTERSECTION_CONFIRM_SAMPLES  (2U)
+#define TASK2_ADVANCE_SAMPLES               (22U) /* 0.22 s */
+#define TASK2_MIN_BRAKE_SAMPLES             (15U)
+#define TASK2_BRAKE_TIMEOUT_SAMPLES         (80U)
+#define TASK2_TURN_DEGREES                  (85.0f)
+#define TASK2_TURN_RPM                      (100)
+#define TASK2_RETURN_DEGREES                (180.0f)
+#define TASK2_BLANK_CONFIRM_SAMPLES         (3U)
+#define TASK2_REVERSE_RPM                   (75)
+#define TASK2_REVERSE_SAMPLES               (50U) /* 0.50 s */
+#define TASK2_FINAL_SETTLE_SAMPLES          (5U)
 
-static void T2_log(Task2Control *c, const char *s) { if (c->io.log != 0) c->io.log(s); }
-static bool T2_stopped(const Task2Control *c) { uint8_t i; for (i=0;i<4U;i++) { int32_t n=c->io.motors[i]->speedCountsPerSample; int32_t d=c->io.motors[i]->config.zeroSpeedDeadbandCounts; if ((n>d)||(n<-d)) return false; } return true; }
-static void T2_follow(Task2Control *c)
+static void Task2Control_log(Task2Control *control, const char *text)
 {
-    /*
-     * Exactly one ramp step and one line-control update per 10 ms tick.
-     * 20 steps take the target from 0 to 110 rpm in 0.2 seconds.
-     */
-    if (c->ramp < T2_RAMP) {
-        c->ramp++;
+    if (control->io.log != 0) {
+        control->io.log(text);
     }
-    c->io.setLineTrackingSpeed((int16_t) (((int32_t) T2_CRUISE *
-        c->ramp) / T2_RAMP));
-    c->io.updateLineTracking();
 }
 
-static bool T2_cross(Task2Control *c, uint8_t activeCount)
+static bool Task2Control_carStopped(const Task2Control *control)
+{
+    uint8_t i;
+
+    for (i = 0U; i < 4U; i++) {
+        int32_t counts =
+            control->io.motors[i]->speedCountsPerSample;
+        int32_t deadband =
+            control->io.motors[i]->config.zeroSpeedDeadbandCounts;
+
+        if ((counts > deadband) || (counts < -deadband)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void Task2Control_applyRamp(Task2Control *control)
+{
+    if (control->rampSamples < TASK2_RAMP_SAMPLES) {
+        control->rampSamples++;
+    }
+    control->io.setLineTrackingSpeed((int16_t) (((int32_t)
+        TASK2_CRUISE_RPM * control->rampSamples) /
+        TASK2_RAMP_SAMPLES));
+}
+
+static bool Task2Control_detectIntersection(
+    Task2Control *control, uint8_t activeCount)
 {
     if (activeCount == 8U) {
-        c->intersectionCount = 0U;
+        control->intersectionConfirmCount = 0U;
         return true;
     }
-    if (activeCount >= 6U) {
-        if (c->intersectionCount < 255U) {
-            c->intersectionCount++;
+    if (activeCount >= TASK2_INTERSECTION_THRESHOLD) {
+        if (control->intersectionConfirmCount < 255U) {
+            control->intersectionConfirmCount++;
         }
-        return c->intersectionCount >= 2U;
+        return control->intersectionConfirmCount >=
+            TASK2_INTERSECTION_CONFIRM_SAMPLES;
     }
-    c->intersectionCount = 0U;
+    control->intersectionConfirmCount = 0U;
     return false;
 }
-static void T2_stop(Task2Control *c) { c->io.setLineTrackingEnabled(false); c->io.resetLineTracking(); CarControl_stop(c->io.car); }
-void Task2Control_reset(Task2Control *c) { c->state=TASK2_WAIT_INFO; c->pendingTurn=TASK2_TURN_NONE; c->outboundTurn=TASK2_TURN_NONE; c->ramp=0U;c->intersectionCount=0U;c->advance=0U;c->blank=0U;c->reverse=0U;c->settle=0U;c->brake=0U;c->lineSeen=false;c->intersectionLatched=false;c->returning=false;c->numberReceived=false;c->turnCompletedThisLeg=false;c->isUTurn=false;c->io.setLineTrackingEnabled(false);c->io.resetLineTracking();AngleTurnControl_cancel(c->io.angleTurn);CarControl_stop(c->io.car);c->io.setRedLed(false);c->io.setGreenLed(false); }
-void Task2Control_init(Task2Control *c,const Task1Control_Config *io) { c->io=*io;Task2Control_reset(c); }
-bool Task2Control_isActive(const Task2Control *c) { return c->state!=TASK2_WAIT_INFO; }
-void Task2Control_update(Task2Control *c,TaskManager_Task task,bool press,bool release,bool number,Task2Control_Turn command,bool mpu,AngleTurnControl_Result result)
+
+static void Task2Control_start(Task2Control *control,
+    TaskManager_Task1Endpoint endpoint)
 {
- uint8_t n;
- if(task!=TASK_MANAGER_TASK_2){if(c->state!=TASK2_WAIT_INFO)Task2Control_reset(c);return;}
- if(number){c->numberReceived=true;if(c->state==TASK2_WAIT_INFO)c->state=TASK2_WAIT_LOAD;}
- if(command!=TASK2_TURN_NONE && !c->returning &&
-    !c->turnCompletedThisLeg && c->pendingTurn==TASK2_TURN_NONE &&
-    c->state==TASK2_FOLLOW){
-     c->pendingTurn=command;c->outboundTurn=command;
-     T2_log(c,command==TASK2_TURN_LEFT?"TASK2 NEXT LEFT\r\n":"TASK2 NEXT RIGHT\r\n");
- }
- if(c->state==TASK2_WAIT_INFO)return;
- if(c->state==TASK2_WAIT_LOAD){if(press){c->ramp=0U;c->io.setLineTrackingEnabled(true);c->io.resetLineTracking();c->state=TASK2_FOLLOW;T2_log(c,"TASK2 STARTED\r\n");}return;}
- switch(c->state){
- case TASK2_FOLLOW: case TASK2_RETURNING:
-   n=c->io.readActiveChannelCount();
-   if(T2_cross(c,n) && c->pendingTurn!=TASK2_TURN_NONE){
-       c->intersectionLatched=true;c->io.setLineTrackingEnabled(false);
-       c->io.resetLineTracking();c->advance=0U;c->state=TASK2_ADVANCE;
-       CarControl_setMotion(c->io.car,CAR_CONTROL_FORWARD,T2_CRUISE,100U);
-       T2_log(c,"TASK2 CROSS ADVANCE\r\n");
-       break;
-   }
-   c->intersectionLatched=(n>=6U);
-   T2_follow(c);
-   if(n>0U){c->lineSeen=true;c->blank=0U;}
-   else if(c->lineSeen&&c->turnCompletedThisLeg){if(++c->blank>=3U){T2_stop(c);c->brake=0U;c->state=TASK2_BRAKE_END;}}
-   break;
- case TASK2_ADVANCE: CarControl_setMotion(c->io.car,CAR_CONTROL_FORWARD,T2_CRUISE,100U);if(++c->advance>=T2_ADVANCE){CarControl_stop(c->io.car);c->brake=0U;c->state=TASK2_BRAKE_TURN;}break;
- case TASK2_BRAKE_TURN: if(++c->brake>=T2_MIN_BRAKE && T2_stopped(c)){bool left=c->pendingTurn==TASK2_TURN_LEFT;if(mpu&&AngleTurnControl_start(c->io.angleTurn,left,T2_TURN_DEG,T2_TURN_RPM)){c->pendingTurn=TASK2_TURN_NONE;c->isUTurn=false;c->state=TASK2_TURNING;}else{c->state=TASK2_FAULT;c->io.setRedLed(true);}}else if(c->brake>=T2_BRAKE_TIMEOUT){c->state=TASK2_FAULT;c->io.setRedLed(true);}break;
- case TASK2_TURNING: if(result==ANGLE_TURN_RESULT_COMPLETED){c->ramp=0U;c->intersectionLatched=false;c->intersectionCount=0U;c->lineSeen=false;c->blank=0U;if(c->isUTurn){c->isUTurn=false;c->turnCompletedThisLeg=false;c->pendingTurn=(c->outboundTurn==TASK2_TURN_LEFT)?TASK2_TURN_RIGHT:TASK2_TURN_LEFT;}else{c->turnCompletedThisLeg=true;}c->io.setLineTrackingEnabled(true);c->io.resetLineTracking();c->state=c->returning?TASK2_RETURNING:TASK2_FOLLOW;}else if(result==ANGLE_TURN_RESULT_TIMEOUT||result==ANGLE_TURN_RESULT_FAULT){c->state=TASK2_FAULT;c->io.setRedLed(true);}break;
- case TASK2_BRAKE_END: if(++c->brake>=T2_MIN_BRAKE&&T2_stopped(c)){c->reverse=0U;CarControl_setMotion(c->io.car,CAR_CONTROL_BACKWARD,T2_REVERSE_RPM,100U);c->state=TASK2_REVERSE;}else if(c->brake>=T2_BRAKE_TIMEOUT){c->state=TASK2_FAULT;c->io.setRedLed(true);}break;
- case TASK2_REVERSE: CarControl_setMotion(c->io.car,CAR_CONTROL_BACKWARD,T2_REVERSE_RPM,100U);if(++c->reverse>=T2_REVERSE_TICKS){CarControl_stop(c->io.car);c->brake=0U;c->settle=0U;c->state=TASK2_FINAL_BRAKE;}break;
- case TASK2_FINAL_BRAKE: if(T2_stopped(c)){if(++c->settle>=5U){CarControl_emergencyStop(c->io.car);if(c->returning){c->state=TASK2_DONE;c->io.setGreenLed(true);}else{c->state=TASK2_WAIT_UNLOAD;c->io.setRedLed(true);}}}else c->settle=0U; if(++c->brake>=T2_BRAKE_TIMEOUT){c->state=TASK2_FAULT;c->io.setRedLed(true);}break;
- case TASK2_WAIT_UNLOAD: if(release){c->io.setRedLed(false);if(mpu&&AngleTurnControl_start(c->io.angleTurn,true,180.0f,T2_TURN_RPM)){c->state=TASK2_TURNING;c->returning=true;c->isUTurn=true;c->lineSeen=false;c->blank=0U;}else{c->state=TASK2_FAULT;c->io.setRedLed(true);}}break;
- default: break; }
+    control->endpoint2 =
+        (endpoint == TASK_MANAGER_TASK1_ENDPOINT_2);
+    control->returnPhase = false;
+    control->nextTurnRight = false;
+    control->outboundCrossCount = 0U;
+    control->intersectionConfirmCount = 0U;
+    control->advanceSamples = 0U;
+    control->rampSamples = 0U;
+    control->blankSamples = 0U;
+    control->reverseSamples = 0U;
+    control->settledSamples = 0U;
+    control->brakeSamples = 0U;
+    control->intersectionArmed = true;
+    control->lineSeenAfterTurn = false;
+    control->io.setLineTrackingSpeed(0);
+    control->io.setLineTrackingEnabled(true);
+    control->io.resetLineTracking();
+    AngleTurnControl_cancel(control->io.angleTurn);
+    control->io.setRedLed(false);
+    control->io.setGreenLed(false);
+    control->state = TASK2_FOLLOW_SECOND_INTERSECTION;
+    Task2Control_log(control, control->endpoint2 ?
+        "TASK2 END2 STARTED, TURN AT CROSS2\r\n" :
+        "TASK2 END1 STARTED, TURN AT CROSS2\r\n");
+}
+
+static void Task2Control_beginAdvance(Task2Control *control)
+{
+    control->io.setLineTrackingEnabled(false);
+    control->io.resetLineTracking();
+    control->advanceSamples = 0U;
+    control->state = TASK2_ADVANCE;
+    CarControl_setMotion(control->io.car, CAR_CONTROL_FORWARD,
+        TASK2_CRUISE_RPM, 100U);
+}
+
+static void Task2Control_beginEndBrake(Task2Control *control)
+{
+    control->io.setLineTrackingEnabled(false);
+    control->io.resetLineTracking();
+    CarControl_stop(control->io.car);
+    control->brakeSamples = 0U;
+    control->state = TASK2_END_BRAKE;
+}
+
+void Task2Control_init(Task2Control *control,
+    const Task1Control_Config *io)
+{
+    control->io = *io;
+    Task2Control_reset(control);
+}
+
+void Task2Control_reset(Task2Control *control)
+{
+    control->state = TASK2_WAIT_LOAD;
+    control->outboundCrossCount = 0U;
+    control->intersectionConfirmCount = 0U;
+    control->advanceSamples = 0U;
+    control->rampSamples = 0U;
+    control->blankSamples = 0U;
+    control->reverseSamples = 0U;
+    control->settledSamples = 0U;
+    control->brakeSamples = 0U;
+    control->endpoint2 = false;
+    control->returnPhase = false;
+    control->nextTurnRight = false;
+    control->intersectionArmed = false;
+    control->lineSeenAfterTurn = false;
+    control->io.setLineTrackingEnabled(false);
+    control->io.resetLineTracking();
+    AngleTurnControl_cancel(control->io.angleTurn);
+    CarControl_stop(control->io.car);
+    control->io.setRedLed(false);
+    control->io.setGreenLed(false);
+}
+
+bool Task2Control_isActive(const Task2Control *control)
+{
+    return control->state != TASK2_WAIT_LOAD;
+}
+
+void Task2Control_update(Task2Control *control,
+    TaskManager_Task activeTask, TaskManager_Task1Endpoint endpoint,
+    bool statusPressed, bool statusReleased, bool mpuReady,
+    AngleTurnControl_Result turnResult)
+{
+    uint8_t activeCount;
+
+    if (activeTask != TASK_MANAGER_TASK_2) {
+        if (Task2Control_isActive(control)) {
+            Task2Control_reset(control);
+        }
+        return;
+    }
+
+    if (control->state == TASK2_WAIT_LOAD) {
+        if (statusPressed) {
+            Task2Control_start(control, endpoint);
+        }
+        return;
+    }
+
+    switch (control->state) {
+        case TASK2_FOLLOW_SECOND_INTERSECTION:
+            Task2Control_applyRamp(control);
+            activeCount =
+                control->io.readActiveChannelCount();
+
+            if (activeCount < TASK2_INTERSECTION_THRESHOLD) {
+                control->intersectionArmed = true;
+            }
+
+            if (control->intersectionArmed &&
+                Task2Control_detectIntersection(
+                    control, activeCount)) {
+                control->intersectionArmed = false;
+                control->outboundCrossCount++;
+
+                if (control->outboundCrossCount >=
+                    TASK2_TARGET_INTERSECTION_NUMBER) {
+                    control->nextTurnRight = control->endpoint2;
+                    Task2Control_beginAdvance(control);
+                    Task2Control_log(control,
+                        "TASK2 CROSS2 ADVANCE 220ms\r\n");
+                    break;
+                }
+                Task2Control_log(control,
+                    "TASK2 CROSS1 PASSED STRAIGHT\r\n");
+            }
+
+            control->io.updateLineTracking();
+            break;
+
+        case TASK2_RETURN_INTERSECTION:
+            Task2Control_applyRamp(control);
+            activeCount =
+                control->io.readActiveChannelCount();
+
+            if (activeCount < TASK2_INTERSECTION_THRESHOLD) {
+                control->intersectionArmed = true;
+            }
+
+            if (control->intersectionArmed &&
+                Task2Control_detectIntersection(
+                    control, activeCount)) {
+                control->intersectionArmed = false;
+                control->nextTurnRight = !control->endpoint2;
+                Task2Control_beginAdvance(control);
+                Task2Control_log(control,
+                    "TASK2 RETURN CROSS ADVANCE 220ms\r\n");
+                break;
+            }
+
+            control->io.updateLineTracking();
+            break;
+
+        case TASK2_ADVANCE:
+            CarControl_setMotion(control->io.car,
+                CAR_CONTROL_FORWARD, TASK2_CRUISE_RPM, 100U);
+            control->advanceSamples++;
+            if (control->advanceSamples >=
+                TASK2_ADVANCE_SAMPLES) {
+                CarControl_stop(control->io.car);
+                control->brakeSamples = 0U;
+                control->state = TASK2_BRAKE_TURN;
+                Task2Control_log(control,
+                    "TASK2 TURN PID BRAKING\r\n");
+            }
+            break;
+
+        case TASK2_BRAKE_TURN:
+            control->brakeSamples++;
+            if ((control->brakeSamples >=
+                    TASK2_MIN_BRAKE_SAMPLES) &&
+                Task2Control_carStopped(control)) {
+                bool turnLeft = !control->nextTurnRight;
+
+                if (mpuReady &&
+                    AngleTurnControl_start(control->io.angleTurn,
+                        turnLeft, TASK2_TURN_DEGREES,
+                        TASK2_TURN_RPM)) {
+                    control->state = TASK2_TURNING;
+                    Task2Control_log(control, turnLeft ?
+                        "TASK2 LEFT TURN STARTED 85deg\r\n" :
+                        "TASK2 RIGHT TURN STARTED 85deg\r\n");
+                } else {
+                    CarControl_emergencyStop(control->io.car);
+                    control->state = TASK2_FAULT;
+                    control->io.setRedLed(true);
+                    Task2Control_log(control,
+                        "TASK2 TURN START FAILED\r\n");
+                }
+            } else if (control->brakeSamples >=
+                TASK2_BRAKE_TIMEOUT_SAMPLES) {
+                CarControl_emergencyStop(control->io.car);
+                control->state = TASK2_FAULT;
+                control->io.setRedLed(true);
+                Task2Control_log(control,
+                    "TASK2 TURN BRAKE TIMEOUT\r\n");
+            }
+            break;
+
+        case TASK2_TURNING:
+            if (turnResult == ANGLE_TURN_RESULT_COMPLETED) {
+                control->rampSamples = 0U;
+                control->blankSamples = 0U;
+                control->lineSeenAfterTurn = false;
+                control->intersectionConfirmCount = 0U;
+                control->intersectionArmed = false;
+                control->io.setLineTrackingEnabled(true);
+                control->io.resetLineTracking();
+                control->state = TASK2_FOLLOW_BLANK;
+                Task2Control_log(control, control->returnPhase ?
+                    "TASK2 RETURN TURN DONE, FOLLOW START\r\n" :
+                    "TASK2 OUTBOUND TURN DONE, FOLLOW END\r\n");
+            } else if ((turnResult ==
+                    ANGLE_TURN_RESULT_TIMEOUT) ||
+                (turnResult == ANGLE_TURN_RESULT_FAULT)) {
+                CarControl_emergencyStop(control->io.car);
+                control->state = TASK2_FAULT;
+                control->io.setRedLed(true);
+                Task2Control_log(control,
+                    "TASK2 TURN FAULT\r\n");
+            }
+            break;
+
+        case TASK2_FOLLOW_BLANK:
+            Task2Control_applyRamp(control);
+            activeCount =
+                control->io.readActiveChannelCount();
+
+            if (activeCount > 0U) {
+                control->lineSeenAfterTurn = true;
+                control->blankSamples = 0U;
+            } else if (control->lineSeenAfterTurn) {
+                if (control->blankSamples < 255U) {
+                    control->blankSamples++;
+                }
+                if (control->blankSamples >=
+                    TASK2_BLANK_CONFIRM_SAMPLES) {
+                    Task2Control_beginEndBrake(control);
+                    Task2Control_log(control,
+                        control->returnPhase ?
+                        "TASK2 RETURN END BRAKING\r\n" :
+                        "TASK2 DESTINATION BRAKING\r\n");
+                    break;
+                }
+            }
+
+            control->io.updateLineTracking();
+            break;
+
+        case TASK2_END_BRAKE:
+            control->brakeSamples++;
+            if ((control->brakeSamples >=
+                    TASK2_MIN_BRAKE_SAMPLES) &&
+                Task2Control_carStopped(control)) {
+                control->reverseSamples = 0U;
+                CarControl_setMotion(control->io.car,
+                    CAR_CONTROL_BACKWARD,
+                    TASK2_REVERSE_RPM, 100U);
+                control->state = TASK2_REVERSE;
+                Task2Control_log(control,
+                    "TASK2 REVERSE 75RPM 500ms\r\n");
+            } else if (control->brakeSamples >=
+                TASK2_BRAKE_TIMEOUT_SAMPLES) {
+                CarControl_emergencyStop(control->io.car);
+                control->state = TASK2_FAULT;
+                control->io.setRedLed(true);
+                Task2Control_log(control,
+                    "TASK2 END BRAKE TIMEOUT\r\n");
+            }
+            break;
+
+        case TASK2_REVERSE:
+            CarControl_setMotion(control->io.car,
+                CAR_CONTROL_BACKWARD,
+                TASK2_REVERSE_RPM, 100U);
+            control->reverseSamples++;
+            if (control->reverseSamples >=
+                TASK2_REVERSE_SAMPLES) {
+                CarControl_stop(control->io.car);
+                control->brakeSamples = 0U;
+                control->settledSamples = 0U;
+                control->state = TASK2_FINAL_BRAKE;
+                Task2Control_log(control,
+                    "TASK2 FINAL PID BRAKING\r\n");
+            }
+            break;
+
+        case TASK2_FINAL_BRAKE:
+            control->brakeSamples++;
+            if (Task2Control_carStopped(control)) {
+                if (control->settledSamples < 255U) {
+                    control->settledSamples++;
+                }
+                if (control->settledSamples >=
+                    TASK2_FINAL_SETTLE_SAMPLES) {
+                    CarControl_emergencyStop(control->io.car);
+                    if (control->returnPhase) {
+                        control->state = TASK2_DONE;
+                        control->io.setRedLed(false);
+                        control->io.setGreenLed(true);
+                        Task2Control_log(control,
+                            "TASK2 RETURN DONE\r\n");
+                    } else {
+                        control->state = TASK2_WAIT_UNLOAD;
+                        control->io.setRedLed(true);
+                        control->io.setGreenLed(false);
+                        Task2Control_log(control,
+                            "TASK2 WAIT UNLOAD\r\n");
+                    }
+                }
+            } else {
+                control->settledSamples = 0U;
+            }
+
+            if ((control->state == TASK2_FINAL_BRAKE) &&
+                (control->brakeSamples >=
+                    TASK2_BRAKE_TIMEOUT_SAMPLES)) {
+                CarControl_emergencyStop(control->io.car);
+                control->state = TASK2_FAULT;
+                control->io.setRedLed(true);
+                Task2Control_log(control,
+                    "TASK2 FINAL BRAKE TIMEOUT\r\n");
+            }
+            break;
+
+        case TASK2_WAIT_UNLOAD:
+            if (statusReleased) {
+                control->io.setRedLed(false);
+                control->io.setGreenLed(false);
+                if (mpuReady &&
+                    AngleTurnControl_start(control->io.angleTurn,
+                        !control->endpoint2,
+                        TASK2_RETURN_DEGREES,
+                        TASK2_TURN_RPM)) {
+                    control->state = TASK2_RETURN_TURNING;
+                    Task2Control_log(control,
+                        "TASK2 RETURN TURN STARTED 180deg\r\n");
+                } else {
+                    CarControl_emergencyStop(control->io.car);
+                    control->state = TASK2_FAULT;
+                    control->io.setRedLed(true);
+                    Task2Control_log(control,
+                        "TASK2 RETURN TURN START FAILED\r\n");
+                }
+            }
+            break;
+
+        case TASK2_RETURN_TURNING:
+            if (turnResult == ANGLE_TURN_RESULT_COMPLETED) {
+                control->returnPhase = true;
+                control->intersectionConfirmCount = 0U;
+                control->intersectionArmed = false;
+                control->rampSamples = 0U;
+                control->blankSamples = 0U;
+                control->lineSeenAfterTurn = false;
+                control->io.setLineTrackingEnabled(true);
+                control->io.resetLineTracking();
+                control->state = TASK2_RETURN_INTERSECTION;
+                Task2Control_log(control,
+                    "TASK2 RETURN FOLLOWING\r\n");
+            } else if ((turnResult ==
+                    ANGLE_TURN_RESULT_TIMEOUT) ||
+                (turnResult == ANGLE_TURN_RESULT_FAULT)) {
+                CarControl_emergencyStop(control->io.car);
+                control->state = TASK2_FAULT;
+                control->io.setRedLed(true);
+                Task2Control_log(control,
+                    "TASK2 RETURN TURN FAULT\r\n");
+            }
+            break;
+
+        case TASK2_DONE:
+        case TASK2_FAULT:
+        default:
+            break;
+    }
 }
