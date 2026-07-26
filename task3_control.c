@@ -1,6 +1,7 @@
 #include "task3_control.h"
 
-#define TASK3_CRUISE_RPM                  (110)
+#define TASK3_OUTBOUND_CRUISE_RPM         (50)
+#define TASK3_RETURN_CRUISE_RPM           (110)
 #define TASK3_RAMP_SAMPLES                (20U) /* 0.20 s */
 #define TASK3_INTERSECTION_THRESHOLD      (6U)
 #define TASK3_INTERSECTION_CONFIRM        (2U)
@@ -44,11 +45,14 @@ static bool Task3Control_carStopped(const Task3Control *control)
 
 static void Task3Control_followLine(Task3Control *control)
 {
+    int16_t cruiseRpm = control->returning ?
+        TASK3_RETURN_CRUISE_RPM : TASK3_OUTBOUND_CRUISE_RPM;
+
     if (control->rampSamples < TASK3_RAMP_SAMPLES) {
         control->rampSamples++;
     }
     control->io.setLineTrackingSpeed((int16_t) (((int32_t)
-        TASK3_CRUISE_RPM * control->rampSamples) /
+        cruiseRpm * control->rampSamples) /
         TASK3_RAMP_SAMPLES));
     control->io.updateLineTracking();
 }
@@ -220,7 +224,8 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                 control->advanceSamples = 0U;
                 control->state = TASK3_ADVANCE;
                 CarControl_setMotion(control->io.car,
-                    CAR_CONTROL_FORWARD, TASK3_CRUISE_RPM, 100U);
+                    CAR_CONTROL_FORWARD,
+                    TASK3_OUTBOUND_CRUISE_RPM, 100U);
                 Task3Control_log(control,
                     "TASK3 INTERSECTION ADVANCE 220ms\r\n");
                 break;
@@ -277,7 +282,8 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                 control->advanceSamples = 0U;
                 control->state = TASK3_ADVANCE;
                 CarControl_setMotion(control->io.car,
-                    CAR_CONTROL_FORWARD, TASK3_CRUISE_RPM, 100U);
+                    CAR_CONTROL_FORWARD,
+                    TASK3_RETURN_CRUISE_RPM, 100U);
                 Task3Control_log(control,
                     (returnTurn == TASK2_TURN_LEFT) ?
                     "TASK3 RETURN T LEFT, ADVANCE\r\n" :
@@ -310,7 +316,10 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
 
         case TASK3_ADVANCE:
             CarControl_setMotion(control->io.car,
-                CAR_CONTROL_FORWARD, TASK3_CRUISE_RPM, 100U);
+                CAR_CONTROL_FORWARD,
+                control->returning ? TASK3_RETURN_CRUISE_RPM :
+                    TASK3_OUTBOUND_CRUISE_RPM,
+                100U);
             control->advanceSamples++;
             if (control->advanceSamples >=
                 TASK3_ADVANCE_SAMPLES) {
