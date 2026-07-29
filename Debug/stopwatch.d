@@ -1,9 +1,7 @@
 # FIXED
 
-task3_control.o: ../task3_control.c ../task3_control.h ../task1_control.h \
- ../angle_turn_control.h ../car_control.h ../motor_control.h \
- E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h \
- E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_adc12.h \
+stopwatch.o: ../stopwatch.c ../stopwatch.h \
+ ti_msp_dl_config.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/mspm0g350x.h \
@@ -34,6 +32,8 @@ task3_control.o: ../task3_control.c ../task3_control.h ../task1_control.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/hw_debugss.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/hw_sysctl.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/sysctl/hw_sysctl_mspm0g1x0x_g3x0x.h \
+ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h \
+ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_adc12.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_common.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_factoryregion.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_core.h \
@@ -83,17 +83,9 @@ task3_control.o: ../task3_control.c ../task3_control.h ../task1_control.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_vref.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
- E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h \
- ../task_manager.h ../stopwatch.h \
- ti_msp_dl_config.h \
- ../oled.h ../task2_control.h
-../task3_control.h:
-../task1_control.h:
-../angle_turn_control.h:
-../car_control.h:
-../motor_control.h:
-E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h:
-E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_adc12.h:
+ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h
+../stopwatch.h:
+ti_msp_dl_config.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/mspm0g350x.h:
@@ -124,6 +116,8 @@ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/hw_cpus
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/hw_debugss.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/hw_sysctl.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/peripherals/m0p/sysctl/hw_sysctl_mspm0g1x0x_g3x0x.h:
+E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h:
+E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_adc12.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_common.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_factoryregion.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_core.h:
@@ -174,8 +168,3 @@ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_vref.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h:
-../task_manager.h:
-../stopwatch.h:
-ti_msp_dl_config.h:
-../oled.h:
-../task2_control.h:

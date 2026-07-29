@@ -1,10 +1,12 @@
 #include "oled.h"
 
+#include "stopwatch.h"
 #include "ti_msp_dl_config.h"
 
 #define OLED_I2C_ADDRESS       (0x3CU)
 #define OLED_I2C_TIMEOUT_LOOPS (200000U)
 
+/* 等待 OLED 所在的 I2C 控制器空闲。 */
 static bool OLED_waitIdle(void)
 {
     uint32_t timeout = OLED_I2C_TIMEOUT_LOOPS;
@@ -19,6 +21,7 @@ static bool OLED_waitIdle(void)
     return false;
 }
 
+/* 发送一个命令或数据字节；control 用来区分两种类型。 */
 static bool OLED_writeByte(uint8_t control, uint8_t value)
 {
     uint8_t packet[2] = {control, value};
@@ -67,6 +70,7 @@ static bool OLED_data(uint8_t data)
 
 static bool OLED_setPosition(uint8_t column, uint8_t page)
 {
+    /* SSD1306 按页寻址，每页高度为 8 像素。 */
     return OLED_command((uint8_t) (0xB0U + page)) &&
            OLED_command((uint8_t) (column & 0x0FU)) &&
            OLED_command((uint8_t) (0x10U | (column >> 4)));
@@ -74,6 +78,7 @@ static bool OLED_setPosition(uint8_t column, uint8_t page)
 
 static bool OLED_clear(void)
 {
+    /* 清空 8 页 × 128 列的全部显示显存。 */
     uint8_t page;
     uint8_t column;
 
@@ -92,6 +97,7 @@ static bool OLED_clear(void)
 
 static const uint8_t *OLED_getGlyph(char character)
 {
+    /* 5×7 字模只保存当前界面实际使用的数字和大写字母。 */
     static const uint8_t space[5] = {0x00U, 0x00U, 0x00U, 0x00U, 0x00U};
     static const uint8_t A[5] = {0x7EU, 0x11U, 0x11U, 0x11U, 0x7EU};
     static const uint8_t C[5] = {0x3EU, 0x41U, 0x41U, 0x41U, 0x22U};
@@ -145,6 +151,7 @@ static const uint8_t *OLED_getGlyph(char character)
 
 static bool OLED_writeString(uint8_t column, uint8_t page, const char *text)
 {
+    /* 每字写 5 列字模，再写 1 列空白作为字符间距。 */
     uint8_t glyphColumn;
 
     if (!OLED_setPosition(column, page)) {
@@ -166,8 +173,63 @@ static bool OLED_writeString(uint8_t column, uint8_t page, const char *text)
     return true;
 }
 
+/*
+ * 以 3 倍比例绘制 5×7 字模：
+ * 每个原始像素扩展为 3×3 像素，最终字符大小约为 15×21。
+ * 21 像素高度横跨 OLED 的三个页，因此逐页输出低、中、高字节。
+ */
+static bool OLED_writeLargeString(
+    uint8_t column, uint8_t page, const char *text)
+{
+    uint8_t pageOffset;
+
+    for (pageOffset = 0U; pageOffset < 3U; pageOffset++) {
+        const char *character = text;
+
+        if (!OLED_setPosition(column, (uint8_t) (page + pageOffset))) {
+            return false;
+        }
+
+        while (*character != '\0') {
+            const uint8_t *glyph = OLED_getGlyph(*character);
+            uint8_t glyphColumn;
+
+            for (glyphColumn = 0U; glyphColumn < 5U; glyphColumn++) {
+                uint32_t enlargedColumn = 0U;
+                uint8_t row;
+                uint8_t repeat;
+
+                /* 将原字模的一列从 7 像素纵向放大到 21 像素。 */
+                for (row = 0U; row < 7U; row++) {
+                    if ((glyph[glyphColumn] & (1U << row)) != 0U) {
+                        enlargedColumn |= (uint32_t) 0x07U << (row * 3U);
+                    }
+                }
+
+                /* 每一列横向重复三次，完成 3 倍宽度放大。 */
+                for (repeat = 0U; repeat < 3U; repeat++) {
+                    if (!OLED_data((uint8_t)
+                            (enlargedColumn >> (pageOffset * 8U)))) {
+                        return false;
+                    }
+                }
+            }
+
+            /* 字符之间保留三列空白。 */
+            for (glyphColumn = 0U; glyphColumn < 3U; glyphColumn++) {
+                if (!OLED_data(0x00U)) {
+                    return false;
+                }
+            }
+            character++;
+        }
+    }
+    return true;
+}
+
 bool OLED_Init(void)
 {
+    /* 配置寻址、扫描方向、对比度和电荷泵，最后打开显示。 */
     static const uint8_t initCommands[] = {
         0xAEU, 0x20U, 0x02U, 0x40U, 0x81U, 0xCFU, 0xA1U, 0xC8U,
         0xA6U, 0xA8U, 0x3FU, 0xD3U, 0x00U, 0xD5U, 0x80U, 0xD9U,
@@ -301,4 +363,45 @@ bool OLED_ShowCalibration(uint8_t secondsRemaining)
 
     calibrationText[4] = (char) ('0' + secondsRemaining);
     return OLED_clear() && OLED_writeString(46U, 3U, calibrationText);
+}
+
+bool OLED_ShowStopwatch(uint64_t stopwatchMilliseconds)
+{
+    char stopwatchText[6];
+    uint32_t seconds;
+    uint32_t firstDigit;
+    uint8_t textLength;
+    uint8_t column;
+
+    /* 最多显示 9999S，超过后保持在 9999S，避免内容超出屏幕。 */
+    seconds = (uint32_t) (stopwatchMilliseconds / 1000U);
+    if (seconds > 9999U) {
+        seconds = 9999U;
+    }
+
+    /* 不使用 printf，直接从高位到低位生成无前导零的整数文本。 */
+    if (seconds >= 1000U) {
+        firstDigit = 1000U;
+    } else if (seconds >= 100U) {
+        firstDigit = 100U;
+    } else if (seconds >= 10U) {
+        firstDigit = 10U;
+    } else {
+        firstDigit = 1U;
+    }
+
+    textLength = 0U;
+    while (firstDigit > 0U) {
+        stopwatchText[textLength] =
+            (char) ('0' + ((seconds / firstDigit) % 10U));
+        textLength++;
+        firstDigit /= 10U;
+    }
+    stopwatchText[textLength++] = 'S';
+    stopwatchText[textLength] = '\0';
+
+    /* 每个大字符占 18 列，把类似“12S”的内容水平居中。 */
+    column = (uint8_t) ((128U - ((uint16_t) textLength * 18U)) / 2U);
+    return OLED_clear() &&
+        OLED_writeLargeString(column, 2U, stopwatchText);
 }

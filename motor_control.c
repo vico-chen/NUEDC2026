@@ -1,5 +1,6 @@
 #include "motor_control.h"
 
+/* 计算电机输出轴旋转一圈对应的编码器累计计数。 */
 static uint32_t MotorControl_getCountsPerOutputRevolution(
     const MotorControl *motor)
 {
@@ -8,6 +9,7 @@ static uint32_t MotorControl_getCountsPerOutputRevolution(
            (uint32_t) motor->config.encoderDecodeMultiplier;
 }
 
+/* 清除增量式 PID 历史量，避免切换方向时沿用旧输出。 */
 static void MotorControl_resetPid(MotorControl *motor)
 {
     motor->pidOutput = 0.0f;
@@ -15,6 +17,7 @@ static void MotorControl_resetPid(MotorControl *motor)
     motor->pidPreviousError = 0.0f;
 }
 
+/* 将带符号 PWM 百分比转换为 H 桥电平和定时器比较值。 */
 static void MotorControl_applyOutput(
     MotorControl *motor, int16_t pwmPercent)
 {
@@ -62,6 +65,7 @@ static void MotorControl_applyOutput(
         compareValue, motor->config.pwmChannel);
 }
 
+/* 根据目标转速和本周期编码器计数计算 PWM 百分比。 */
 static int16_t MotorControl_updatePid(MotorControl *motor,
     int32_t measuredCountsPerSample, int16_t targetRpm)
 {
@@ -95,7 +99,7 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
             return 0;
         }
 
-        /* Brake opposite to the measured encoder direction, never a stale command. */
+        /* 制动力始终与实测方向相反，不能沿用上一条运动命令。 */
         motor->zeroBrakeDirection = (measuredCountsPerSample > 0) ? -1 : 1;
 
         error = -(float) measuredMagnitude;
@@ -166,6 +170,7 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
 void MotorControl_init(
     MotorControl *motor, const MotorControl_Config *config)
 {
+    /* 先将输出置零，再启动 PWM 定时器。 */
     *motor = (MotorControl) {0};
     motor->config = *config;
     MotorControl_applyOutput(motor, 0);
@@ -174,6 +179,7 @@ void MotorControl_init(
 
 void MotorControl_setTargetRpm(MotorControl *motor, int16_t targetRpm)
 {
+    /* 对外部命令限幅，防止目标转速超过配置上限。 */
     if (targetRpm > motor->config.maxTargetRpm) {
         targetRpm = motor->config.maxTargetRpm;
     } else if (targetRpm < -motor->config.maxTargetRpm) {
@@ -195,6 +201,7 @@ void MotorControl_coast(MotorControl *motor)
 
 void MotorControl_handleEncoderEdge(MotorControl *motor)
 {
+    /* 在 B 相边沿读取 A/B 电平，通过正交关系判断计数方向。 */
     bool phaseB = (DL_GPIO_readPins(motor->config.encoderPhaseBPort,
                        motor->config.encoderPhaseBPin) != 0U);
     bool phaseA = (DL_GPIO_readPins(motor->config.encoderPhaseAPort,
@@ -209,6 +216,7 @@ void MotorControl_handleEncoderEdge(MotorControl *motor)
 
 void MotorControl_update(MotorControl *motor)
 {
+    /* 每 10 ms 取走编码器计数、更新 PID 并写入 PWM。 */
     motor->speedCountsPerSample = motor->encoderCount;
     motor->encoderCount = 0;
     motor->pwmPercent = MotorControl_updatePid(
@@ -218,6 +226,7 @@ void MotorControl_update(MotorControl *motor)
     motor->reportCountAccumulator += motor->speedCountsPerSample;
     motor->reportDivider++;
     if (motor->reportDivider >= motor->config.reportSamples) {
+        /* 低频累计状态，避免调试串口占用过多主循环时间。 */
         motor->reportDivider = 0U;
         motor->reportCounts = motor->reportCountAccumulator;
         motor->reportCountAccumulator = 0;
@@ -236,6 +245,7 @@ bool MotorControl_takeStatus(
         return false;
     }
 
+    /* 状态只消费一次，随后将累计计数换算为 0.1 RPM。 */
     status->targetRpm = motor->targetRpm;
     status->encoderCounts = motor->reportCounts;
     status->pwmPercent = motor->pwmPercent;

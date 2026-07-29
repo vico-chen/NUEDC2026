@@ -1,6 +1,6 @@
 # FIXED
 
-oled.o: ../oled.c ../oled.h \
+oled.o: ../oled.c ../oled.h ../stopwatch.h \
  ti_msp_dl_config.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h \
@@ -85,6 +85,7 @@ oled.o: ../oled.c ../oled.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h
 ../oled.h:
+../stopwatch.h:
 ti_msp_dl_config.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h:

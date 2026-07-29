@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* 一次定角转向更新的执行结果。 */
 typedef enum {
     ANGLE_TURN_RESULT_NONE,
     ANGLE_TURN_RESULT_COMPLETED,
@@ -13,6 +14,7 @@ typedef enum {
     ANGLE_TURN_RESULT_FAULT
 } AngleTurnControl_Result;
 
+/* 定角转向所需的车辆对象、方向标定和停止判据。 */
 typedef struct {
     CarControl *car;
     int8_t leftTurnYawSign;
@@ -28,6 +30,7 @@ typedef struct {
     uint16_t timeoutSamples;
 } AngleTurnControl_Config;
 
+/* 当前转向的目标、计数器与运行标志。 */
 typedef struct {
     AngleTurnControl_Config config;
     float targetAbsDegrees;
@@ -41,6 +44,7 @@ typedef struct {
     bool creeping;
 } AngleTurnControl;
 
+/* 初始化、启动、周期更新、取消以及查询定角转向。 */
 void AngleTurnControl_init(
     AngleTurnControl *control, const AngleTurnControl_Config *config);
 bool AngleTurnControl_start(AngleTurnControl *control, bool turnLeft,

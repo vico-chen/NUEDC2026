@@ -1,5 +1,6 @@
 #include "car_control.h"
 
+/* 把车辆坐标系中的四轮速度换算成各电机实际安装方向。 */
 static void CarControl_setWheelRpm(CarControl *car,
     int16_t leftRearRpm, int16_t leftFrontRpm,
     int16_t rightFrontRpm, int16_t rightRearRpm)
@@ -16,6 +17,7 @@ static void CarControl_setWheelRpm(CarControl *car,
 
 void CarControl_init(CarControl *car, const CarControl_Config *config)
 {
+    /* 保存配置、载入默认巡航参数，并确保上电时停车。 */
     car->config = *config;
     car->speedRpm = config->defaultSpeedRpm;
     car->turnInnerPercent = config->defaultTurnInnerPercent;
@@ -30,9 +32,8 @@ void CarControl_stop(CarControl *car)
 void CarControl_emergencyStop(CarControl *car)
 {
     /*
-     * Do not use CarControl_stop() here. A zero speed target deliberately
-     * enters the closed-loop reverse-braking branch, which is unsuitable for
-     * an emergency command if an encoder is noisy or has the wrong polarity.
+     * 紧急停车不能调用普通 stop：0 RPM 会进入闭环反向制动。
+     * 编码器若有噪声或极性错误，反向制动可能产生意外驱动力。
      */
     CarControl_coast(car);
 }
@@ -65,6 +66,7 @@ void CarControl_setMotion(CarControl *car, CarControl_Motion motion,
     innerWheelRpm = (int16_t) (((int32_t) speedRpm *
         turnInnerPercent) / 100);
 
+    /* 根据运动类型生成前后、原地转向或差速转向的四轮目标。 */
     switch (motion) {
         case CAR_CONTROL_FORWARD:
             CarControl_setWheelRpm(

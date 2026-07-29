@@ -304,10 +304,10 @@ extern "C" {
 #define GPIO_BTN_PIN_TASK_PORT                                           (GPIOB)
 #define GPIO_BTN_PIN_TASK_PIN                                   (DL_GPIO_PIN_21)
 #define GPIO_BTN_PIN_TASK_IOMUX                                  (IOMUX_PINCM49)
-/* Defines for PIN_TASK1_CHANGE: GPIOA.18 with pinCMx 40 on package pin 11 */
-#define GPIO_BTN_PIN_TASK1_CHANGE_PORT                                   (GPIOA)
-#define GPIO_BTN_PIN_TASK1_CHANGE_PIN                           (DL_GPIO_PIN_18)
-#define GPIO_BTN_PIN_TASK1_CHANGE_IOMUX                          (IOMUX_PINCM40)
+/* Defines for PIN_TASK_START: GPIOA.18 with pinCMx 40 on package pin 11 */
+#define GPIO_BTN_PIN_TASK_START_PORT                                     (GPIOA)
+#define GPIO_BTN_PIN_TASK_START_PIN                             (DL_GPIO_PIN_18)
+#define GPIO_BTN_PIN_TASK_START_IOMUX                            (IOMUX_PINCM40)
 
 
 /* clang-format on */

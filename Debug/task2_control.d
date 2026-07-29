@@ -84,7 +84,9 @@ task2_control.o: ../task2_control.c ../task2_control.h ../task1_control.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h \
- ../task_manager.h
+ ../task_manager.h ../stopwatch.h \
+ ti_msp_dl_config.h \
+ ../oled.h
 ../task2_control.h:
 ../task1_control.h:
 ../angle_turn_control.h:
@@ -173,3 +175,6 @@ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h:
 ../task_manager.h:
+../stopwatch.h:
+ti_msp_dl_config.h:
+../oled.h:

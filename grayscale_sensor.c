@@ -26,6 +26,7 @@
 
 static void grayscale_delay_us(uint32_t microseconds)
 {
+    /* 通道切换后留出模拟开关和输出信号的稳定时间。 */
     /* Same 32 MHz assumption as vendor delay_us / empty.syscfg. */
     delay_cycles(microseconds * (CPUCLK_FREQ / 1000000U));
 }
@@ -39,6 +40,7 @@ static void grayscale_delay_us(uint32_t microseconds)
  */
 static void grayscale_select_channel(uint8_t channel)
 {
+    /* channel 的低三位分别驱动 AD0、AD1、AD2。 */
     const uint8_t ad0 = (uint8_t) ((channel >> 0) & 0x01U);
     const uint8_t ad1 = (uint8_t) ((channel >> 1) & 0x01U);
     const uint8_t ad2 = (uint8_t) ((channel >> 2) & 0x01U);
@@ -88,6 +90,7 @@ static uint8_t grayscale_read_out_raw(void)
 /* Extra stability under motor PWM / encoder EMI; not in bare vendor demo. */
 static uint8_t grayscale_read_out_majority(void)
 {
+    /* 多次采样并取多数值，抑制路面边缘处的数字抖动。 */
     uint8_t a;
     uint8_t b;
     uint8_t c;
@@ -103,6 +106,7 @@ static uint8_t grayscale_read_out_majority(void)
 
 void Grayscale_Sensor_Init(void)
 {
+    /* 默认选择 X1，让传感器稳定后再开始读取。 */
     /*
      * Re-apply OUT as input with pull-up + hysteresis.
      * Vendor uses floating input; on a running chassis, OUT is quieter with
@@ -118,6 +122,7 @@ void Grayscale_Sensor_Init(void)
 
 void Grayscale_Sensor_ReadAll(uint8_t values[GRAYSCALE_SENSOR_CHANNELS])
 {
+    /* 依次切换 4051 的八个输入通道。 */
     uint8_t channel;
 
     for (channel = 0U; channel < GRAYSCALE_SENSOR_CHANNELS; channel++) {

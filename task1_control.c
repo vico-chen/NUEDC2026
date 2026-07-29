@@ -1,5 +1,6 @@
 #include "task1_control.h"
 
+/* 以下时间参数均按 10 ms 状态机周期计数。 */
 #define TASK1_CRUISE_TARGET_RPM (150)
 #define TASK1_ACCELERATION_SAMPLES (20U)
 #define TASK1_INTERSECTION_THRESHOLD (6U)
@@ -22,6 +23,7 @@ static void Task1Control_log(Task1Control *control, const char *text)
     }
 }
 
+/* 四个车轮都落入各自零速死区，才认为车辆已经停稳。 */
 static bool Task1Control_carStopped(const Task1Control *control)
 {
     uint8_t i;
@@ -37,6 +39,7 @@ static bool Task1Control_carStopped(const Task1Control *control)
     return true;
 }
 
+/* 以固定步数将巡线速度从 0 平滑提升到目标 RPM。 */
 static void Task1Control_applyRamp(Task1Control *control)
 {
     if (control->accelerationSamples < TASK1_ACCELERATION_SAMPLES) {
@@ -47,6 +50,7 @@ static void Task1Control_applyRamp(Task1Control *control)
         TASK1_ACCELERATION_SAMPLES));
 }
 
+/* 八路全有效立即确认；六路以上需连续多帧确认十字路口。 */
 static bool Task1Control_detectIntersection(Task1Control *control)
 {
     uint8_t activeCount = control->config.readActiveChannelCount();
@@ -69,6 +73,7 @@ static bool Task1Control_detectIntersection(Task1Control *control)
 static void Task1Control_start(Task1Control *control,
     TaskManager_Task1Endpoint endpoint)
 {
+    /* 锁定本次端点，清空各阶段计数并启动巡线。 */
     control->endpoint2 = (endpoint == TASK_MANAGER_TASK1_ENDPOINT_2);
     control->returnPhase = false;
     control->nextTurnRight = false;
@@ -88,6 +93,7 @@ static void Task1Control_start(Task1Control *control,
     Task1Control_log(control, control->endpoint2 ?
         "TASK1 END2 STARTED target=300 ramp=200ms\r\n" :
         "TASK1 END1 STARTED target=300 ramp=200ms\r\n");
+    Stopwatch_start();
 }
 
 void Task1Control_init(Task1Control *control,
@@ -111,6 +117,7 @@ void Task1Control_reset(Task1Control *control)
     control->endpoint2 = false;
     control->returnPhase = false;
     control->nextTurnRight = false;
+    control->lastShowStopwatchSystick = systick_ms;
     control->config.setLineTrackingEnabled(false);
     control->config.resetLineTracking();
     AngleTurnControl_cancel(control->config.angleTurn);
@@ -123,8 +130,7 @@ bool Task1Control_isActive(const Task1Control *control)
 }
 
 void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
-    TaskManager_Task1Endpoint endpoint, bool statusPressed,
-    bool statusReleased, bool mpu6050Ready,
+    TaskManager_Task1Endpoint endpoint, bool startTaskPressed, bool mpu6050Ready,
     AngleTurnControl_Result angleTurnResult)
 {
     uint8_t activeCount;
@@ -137,13 +143,22 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
     }
 
     if (control->state == TASK1_CONTROL_WAIT_LOAD) {
-        if (statusPressed) {
+        if (startTaskPressed) {
             Task1Control_start(control, endpoint);
         }
         return;
     }
 
+    // 定时显示计时器
+    if (systick_ms - control->lastShowStopwatchSystick >= 500)
+    {
+        uint64_t currentMs = Stopwatch_getCurrentMs();
+        OLED_ShowStopwatch(currentMs);
+        control->lastShowStopwatchSystick = systick_ms;
+    }
+
     switch (control->state) {
+        /* 去程或返程：加速巡线，直到确认目标十字路口。 */
         case TASK1_CONTROL_FOLLOW_INTERSECTION:
             Task1Control_applyRamp(control);
             if (Task1Control_detectIntersection(control)) {
@@ -161,6 +176,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
             }
             break;
 
+        /* 保持直行一小段，使车体中心进入路口后再停车。 */
         case TASK1_CONTROL_ADVANCE:
             CarControl_setMotion(control->config.car, CAR_CONTROL_FORWARD,
                 TASK1_CRUISE_TARGET_RPM, 100U);
@@ -173,6 +189,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
             }
             break;
 
+        /* 等待车轮停稳，再启动 MPU6050 定角转向。 */
         case TASK1_CONTROL_BRAKE_TURN:
             control->brakeSamples++;
             if ((control->brakeSamples >= TASK1_BRAKE_MIN_SAMPLES) &&
@@ -196,6 +213,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
             }
             break;
 
+        /* 等待转向控制器完成；超时或反馈故障则进入 FAULT。 */
         case TASK1_CONTROL_TURNING:
             if (angleTurnResult == ANGLE_TURN_RESULT_COMPLETED) {
                 control->config.setLineTrackingEnabled(true);
@@ -213,6 +231,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
             }
             break;
 
+        /* 转弯后继续巡线，连续检测到空白即认为到达终点。 */
         case TASK1_CONTROL_FOLLOW_BLANK:
             Task1Control_applyRamp(control);
             activeCount = control->config.readActiveChannelCount();
@@ -236,6 +255,7 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
             control->config.updateLineTracking();
             break;
 
+        /* 到达终点后先主动制动，停稳后进入倒车微调。 */
         case TASK1_CONTROL_END_BRAKE:
             control->brakeSamples++;
             if ((control->brakeSamples >= TASK1_BRAKE_MIN_SAMPLES) &&
@@ -243,87 +263,11 @@ void Task1Control_update(Task1Control *control, TaskManager_Task activeTask,
                 control->reverseSamples = 0U;
                 CarControl_setMotion(control->config.car, CAR_CONTROL_BACKWARD,
                     TASK1_REVERSE_RPM, 100U);
-                control->state = TASK1_CONTROL_END_REVERSE;
-                Task1Control_log(control, "TASK1 REVERSE 75RPM 500ms\r\n");
+                Stopwatch_stop();
             } else if (control->brakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES) {
                 CarControl_emergencyStop(control->config.car);
                 control->state = TASK1_CONTROL_FAULT;
-                Task1Control_log(control, "TASK1 END BRAKE TIMEOUT\r\n");
-            }
-            break;
-
-        case TASK1_CONTROL_END_REVERSE:
-            CarControl_setMotion(control->config.car, CAR_CONTROL_BACKWARD,
-                TASK1_REVERSE_RPM, 100U);
-            control->reverseSamples++;
-            if (control->reverseSamples >= TASK1_REVERSE_SAMPLES) {
-                CarControl_stop(control->config.car);
-                control->brakeSamples = 0U;
-                control->finalBrakeSettledCount = 0U;
-                control->state = TASK1_CONTROL_FINAL_BRAKE;
-                Task1Control_log(control, "TASK1 FINAL PID BRAKING\r\n");
-            }
-            break;
-
-        case TASK1_CONTROL_FINAL_BRAKE:
-            control->brakeSamples++;
-            if (Task1Control_carStopped(control)) {
-                if (control->finalBrakeSettledCount < 255U) {
-                    control->finalBrakeSettledCount++;
-                }
-                if (control->finalBrakeSettledCount >= TASK1_FINAL_SETTLE_SAMPLES) {
-                    CarControl_emergencyStop(control->config.car);
-                    if (control->returnPhase) {
-                        control->state = TASK1_CONTROL_DONE;
-                        Task1Control_log(control, "TASK1 RETURN DONE\r\n");
-                    } else {
-                        control->state = TASK1_CONTROL_WAIT_UNLOAD;
-                        Task1Control_log(control, "TASK1 WAIT UNLOAD\r\n");
-                    }
-                }
-            } else {
-                control->finalBrakeSettledCount = 0U;
-            }
-            if ((control->state == TASK1_CONTROL_FINAL_BRAKE) &&
-                (control->brakeSamples >= TASK1_BRAKE_TIMEOUT_SAMPLES)) {
-                CarControl_emergencyStop(control->config.car);
-                control->state = TASK1_CONTROL_FAULT;
-                Task1Control_log(control, "TASK1 FINAL BRAKE TIMEOUT\r\n");
-            }
-            break;
-
-        case TASK1_CONTROL_WAIT_UNLOAD:
-            if (statusReleased) {
-                if (mpu6050Ready && AngleTurnControl_start(control->config.angleTurn,
-                        false, TASK1_RETURN_DEGREES,
-                        TASK1_TURN_RPM)) {
-                    control->state = TASK1_CONTROL_RETURN_TURNING;
-                    Task1Control_log(control,
-                        "TASK1 RETURN RIGHT TURN STARTED 180deg\r\n");
-                } else {
-                    CarControl_emergencyStop(control->config.car);
-                    control->state = TASK1_CONTROL_FAULT;
-                    Task1Control_log(control, "TASK1 RETURN TURN START FAILED\r\n");
-                }
-            }
-            break;
-
-        case TASK1_CONTROL_RETURN_TURNING:
-            if (angleTurnResult == ANGLE_TURN_RESULT_COMPLETED) {
-                control->returnPhase = true;
-                control->config.setLineTrackingEnabled(true);
-                control->lineSeenAfterTurn = false;
-                control->intersectionPartialCount = 0U;
-                control->blankCount = 0U;
-                control->accelerationSamples = 0U;
-                control->config.resetLineTracking();
-                control->state = TASK1_CONTROL_FOLLOW_INTERSECTION;
-                Task1Control_log(control, "TASK1 RETURN FOLLOWING\r\n");
-            } else if ((angleTurnResult == ANGLE_TURN_RESULT_TIMEOUT) ||
-                       (angleTurnResult == ANGLE_TURN_RESULT_FAULT)) {
-                CarControl_emergencyStop(control->config.car);
-                control->state = TASK1_CONTROL_FAULT;
-                Task1Control_log(control, "TASK1 RETURN TURN FAULT\r\n");
+                Stopwatch_stop();
             }
             break;
 

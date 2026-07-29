@@ -19,6 +19,7 @@ ORDERED_OBJS += \
 "./motor_control.o" \
 "./mpu6050_angle.o" \
 "./oled.o" \
+"./stopwatch.o" \
 "./task1_control.o" \
 "./task2_control.o" \
 "./task3_control.o" \
@@ -146,8 +147,8 @@ main.out: $(OBJS) $(GEN_CMDS)
 # Other Targets
 clean:
 	-$(RM) $(GEN_MISC_FILES__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "angle_turn_control.o" "car_control.o" "grayscale_sensor.o" "main.o" "ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "motor_control.o" "mpu6050_angle.o" "oled.o" "task1_control.o" "task2_control.o" "task3_control.o" "task_manager.o" 
-	-$(RM) "angle_turn_control.d" "car_control.d" "grayscale_sensor.d" "main.d" "ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "motor_control.d" "mpu6050_angle.d" "oled.d" "task1_control.d" "task2_control.d" "task3_control.d" "task_manager.d" 
+	-$(RM) "angle_turn_control.o" "car_control.o" "grayscale_sensor.o" "main.o" "ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "motor_control.o" "mpu6050_angle.o" "oled.o" "stopwatch.o" "task1_control.o" "task2_control.o" "task3_control.o" "task_manager.o" 
+	-$(RM) "angle_turn_control.d" "car_control.d" "grayscale_sensor.d" "main.d" "ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "motor_control.d" "mpu6050_angle.d" "oled.d" "stopwatch.d" "task1_control.d" "task2_control.d" "task3_control.d" "task_manager.d" 
 	-@echo ' '
 
 .PHONY: all clean dependents

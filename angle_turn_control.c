@@ -7,6 +7,7 @@
  * 不再提前滑行、等待角速度下降或低速补角。
  */
 
+/* 应用安装方向标定，使“左转角度为正”的约定保持一致。 */
 static float AngleTurnControl_getSignedYaw(
     const AngleTurnControl *control)
 {
@@ -14,16 +15,18 @@ static float AngleTurnControl_getSignedYaw(
            (float) control->config.leftTurnYawSign;
 }
 
+/* 计算沿当前命令方向尚未完成的角度。 */
 static float AngleTurnControl_getRemainingDegrees(
     const AngleTurnControl *control)
 {
     float signedYaw = AngleTurnControl_getSignedYaw(control);
     float signedTarget = control->turnDirection * control->targetAbsDegrees;
 
-    /* Positive remaining => still need more rotation in the command direction. */
+    /* 返回正数表示仍需继续旋转，0 或负数表示已经到达或过冲。 */
     return control->turnDirection * (signedTarget - signedYaw);
 }
 
+/* 将左/右方向转换成车辆原地旋转命令。 */
 static void AngleTurnControl_commandPivot(
     AngleTurnControl *control, int16_t rpm)
 {

@@ -1,5 +1,6 @@
 #include "task3_control.h"
 
+/* 所有 samples 参数均以 10 ms 为一个计数周期。 */
 #define TASK3_OUTBOUND_CRUISE_RPM         (150)
 #define TASK3_RETURN_CRUISE_RPM           (110)
 #define TASK3_RAMP_SAMPLES                (20U) /* 0.20 s */
@@ -27,6 +28,7 @@ static void Task3Control_log(Task3Control *control, const char *text)
     }
 }
 
+/* 四个编码器速度均进入死区后，才判定车辆已经停稳。 */
 static bool Task3Control_carStopped(const Task3Control *control)
 {
     uint8_t i;
@@ -44,6 +46,7 @@ static bool Task3Control_carStopped(const Task3Control *control)
     return true;
 }
 
+/* 去程和返程采用不同巡航速度，并各自从 0 线性加速。 */
 static void Task3Control_followLine(Task3Control *control)
 {
     int16_t cruiseRpm = control->returning ?
@@ -58,6 +61,7 @@ static void Task3Control_followLine(Task3Control *control)
     control->io.updateLineTracking();
 }
 
+/* 通过有效灰度通道数量和连续帧数确认十字路口。 */
 static bool Task3Control_detectIntersection(
     Task3Control *control, uint8_t activeCount)
 {
@@ -76,6 +80,7 @@ static bool Task3Control_detectIntersection(
     return false;
 }
 
+/* 返程时根据左四路或右四路全有效判断 T 形路口方向。 */
 static Task2Control_Turn Task3Control_detectReturnJunction(
     uint8_t activeMask)
 {
@@ -141,6 +146,7 @@ static Task2Control_Turn Task3Control_getPresetTurn(
         TASK2_TURN_LEFT : TASK2_TURN_RIGHT;
 }
 
+/* 关闭巡线，使用电机零速闭环制动，并切换到指定状态。 */
 static void Task3Control_beginPidBrake(Task3Control *control,
     Task3Control_State nextState)
 {
@@ -268,6 +274,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
     }
 
     switch (control->state) {
+        /* 去程巡线：预设路线从第三个十字路口开始执行两次转向。 */
         case TASK3_FOLLOW:
             activeCount = control->io.readActiveChannelCount();
 
@@ -335,6 +342,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             }
             break;
 
+        /* 返程巡线：按倒序和反方向还原去程的两次转向。 */
         case TASK3_RETURN_FOLLOW:
         {
             Task2Control_Turn returnTurn;
@@ -397,6 +405,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             break;
         }
 
+        /* 直行进入路口中心，使旋转中心尽量落在交叉区域。 */
         case TASK3_ADVANCE:
             CarControl_setMotion(control->io.car,
                 CAR_CONTROL_FORWARD,
@@ -413,6 +422,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             }
             break;
 
+        /* 转弯前等待四轮停稳，然后启动定角转向。 */
         case TASK3_BRAKE_TURN:
             control->brakeSamples++;
             if ((control->brakeSamples >=
@@ -446,6 +456,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             }
             break;
 
+        /* 处理普通 85 度转向和卸载后的 180 度掉头结果。 */
         case TASK3_TURNING:
             if (turnResult == ANGLE_TURN_RESULT_COMPLETED) {
                 control->rampSamples = 0U;
@@ -500,6 +511,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             }
             break;
 
+        /* 确认终点停车，随后进入定时倒车调整。 */
         case TASK3_BRAKE_END:
             control->brakeSamples++;
             if ((control->brakeSamples >=
@@ -520,6 +532,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             }
             break;
 
+        /* 固定速度倒车 0.5 秒。 */
         case TASK3_REVERSE:
             CarControl_setMotion(control->io.car,
                 CAR_CONTROL_BACKWARD, TASK3_REVERSE_RPM, 100U);
@@ -534,6 +547,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             }
             break;
 
+        /* 倒车结束后再次制动，连续稳定多帧才算真正停稳。 */
         case TASK3_FINAL_BRAKE:
             control->brakeSamples++;
             if (Task3Control_carStopped(control)) {
@@ -567,6 +581,7 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
             }
             break;
 
+        /* 释放卸载按钮后右转 180 度，开始按原路返程。 */
         case TASK3_WAIT_UNLOAD:
             if (statusReleased) {
                 control->pendingTurn = TASK2_TURN_NONE;

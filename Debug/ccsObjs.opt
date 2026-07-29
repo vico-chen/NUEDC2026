@@ -7,6 +7,7 @@
 "./motor_control.o"
 "./mpu6050_angle.o"
 "./oled.o"
+"./stopwatch.o"
 "./task1_control.o"
 "./task2_control.o"
 "./task3_control.o"

@@ -5,9 +5,12 @@
 #include <stdint.h>
 #include <ti/driverlib/driverlib.h>
 
+/* 单个电机的硬件映射、编码器规格以及闭环 PID 参数。 */
 typedef struct {
+    /* PWM 定时器与比较通道。 */
     GPTIMER_Regs *pwmInstance;
     DL_TIMER_CC_INDEX pwmChannel;
+    /* H 桥方向引脚、编码器 AB 相引脚。 */
     GPIO_Regs *directionIn1Port;
     GPIO_Regs *directionIn2Port;
     uint32_t directionIn1Pin;
@@ -24,6 +27,7 @@ typedef struct {
     uint8_t reportSamples;
     int16_t maxTargetRpm;
     int32_t zeroSpeedDeadbandCounts;
+    /* 增量式 PID 参数及驱动输出限幅。 */
     float kp;
     float ki;
     float kd;
@@ -31,6 +35,7 @@ typedef struct {
     float zeroSpeedBrakeMaxPercent;
 } MotorControl_Config;
 
+/* 串口状态快照；speedRpmTimes10 的单位是 0.1 RPM。 */
 typedef struct {
     int16_t targetRpm;
     int32_t speedRpmTimes10;
@@ -38,6 +43,7 @@ typedef struct {
     int16_t pwmPercent;
 } MotorControl_Status;
 
+/* 运行时状态；volatile 字段在前台和中断之间共享。 */
 typedef struct {
     MotorControl_Config config;
     volatile int16_t targetRpm;
@@ -53,16 +59,18 @@ typedef struct {
     float pidPreviousError;
     int8_t pidDirection;
     int8_t zeroBrakeDirection;
-    /* Written by the foreground command handler and read by the 10 ms ISR. */
+    /* 前台命令处理程序写入，10 ms 定时中断读取。 */
     volatile bool coastMode;
 } MotorControl;
 
+/* 初始化、设置目标转速、滑行、处理编码器并周期更新 PID。 */
 void MotorControl_init(
     MotorControl *motor, const MotorControl_Config *config);
 void MotorControl_setTargetRpm(MotorControl *motor, int16_t targetRpm);
 void MotorControl_coast(MotorControl *motor);
 void MotorControl_handleEncoderEdge(MotorControl *motor);
 void MotorControl_update(MotorControl *motor);
+/* 取得一帧累计状态；没有新状态时返回 false。 */
 bool MotorControl_takeStatus(
     MotorControl *motor, MotorControl_Status *status);
 

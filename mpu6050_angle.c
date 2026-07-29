@@ -37,6 +37,7 @@ static float gZAngleDegrees;
 static float gZRateDps;
 static uint8_t gDeviceId;
 
+/* 等待 I2C 控制器空闲，超时可避免总线异常时程序卡死。 */
 static bool MPU6050_waitIdle(void)
 {
     uint32_t timeout = MPU6050_I2C_TIMEOUT_LOOPS;
@@ -51,6 +52,7 @@ static bool MPU6050_waitIdle(void)
     return false;
 }
 
+/* 等待指定传输完成标志，并同时检查 NACK 与总线错误。 */
 static bool MPU6050_waitTransferDone(uint32_t doneInterrupt)
 {
     uint32_t timeout = MPU6050_I2C_TIMEOUT_LOOPS;
@@ -69,6 +71,7 @@ static bool MPU6050_waitTransferDone(uint32_t doneInterrupt)
     return false;
 }
 
+/* 向 MPU6050 单个寄存器写入一个字节。 */
 static bool MPU6050_writeRegister(uint8_t registerAddress, uint8_t value)
 {
     uint8_t packet[2] = {registerAddress, value};
@@ -92,6 +95,7 @@ static bool MPU6050_writeRegister(uint8_t registerAddress, uint8_t value)
     return MPU6050_waitTransferDone(DL_I2C_INTERRUPT_CONTROLLER_TX_DONE);
 }
 
+/* 从起始寄存器连续读取多个字节。 */
 static bool MPU6050_readRegisters(
     uint8_t registerAddress, uint8_t *data, uint8_t length)
 {
@@ -149,6 +153,7 @@ static bool MPU6050_readRegisters(
     return MPU6050_waitTransferDone(DL_I2C_INTERRUPT_CONTROLLER_RX_DONE);
 }
 
+/* 读取 Z 轴陀螺仪高低字节并组合成有符号原始值。 */
 static bool MPU6050_readGyroZRaw(int16_t *gyroZRaw)
 {
     uint8_t data[2];
@@ -161,6 +166,7 @@ static bool MPU6050_readGyroZRaw(int16_t *gyroZRaw)
     return true;
 }
 
+/* 配置量程与采样率，并通过静止采样求出 Z 轴零偏。 */
 bool MPU6050_Angle_initWithProgress(
     MPU6050_CalibrationProgressCallback progressCallback)
 {
@@ -226,6 +232,7 @@ bool MPU6050_Angle_init(void)
     return MPU6050_Angle_initWithProgress(NULL);
 }
 
+/* 去除零偏并积分 Z 轴角速度，得到累计航向角。 */
 bool MPU6050_Angle_update(void)
 {
     int16_t gyroZRaw;
@@ -240,6 +247,7 @@ bool MPU6050_Angle_update(void)
     return true;
 }
 
+/* 清零累计角度，使下一次转向从相对 0 度开始。 */
 void MPU6050_Angle_reset(void)
 {
     gZAngleDegrees = 0.0f;

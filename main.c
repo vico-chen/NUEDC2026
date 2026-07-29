@@ -39,12 +39,12 @@
 #include "oled.h"
 #include "task_manager.h"
 #include "task1_control.h"
-#include "task2_control.h"
-#include "task3_control.h"
+#include "stopwatch.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 
+/* ======================== 全局运行参数 ======================== */
 #define MOTOR_MAX_TARGET_RPM (1000U)
 #define UART_COMMAND_BUFFER_SIZE (128U)
 #define OPENMV_DEBUG_RX_BUFFER_SIZE (64U)
@@ -56,17 +56,17 @@
 #define ANGLE_TURN_LEFT_YAW_SIGN (1)
 #define GRAYSCALE_STREAM_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
 
-/* Line tracking config (8-ch digital grayscale, black line => output 1). */
+/* 八路数字灰度巡线参数：检测到黑线时输出 1。 */
 #define LINE_TRACKING_ACTIVE_LEVEL (1U)
 #define LINE_PID_KP (4.0f)
 #define LINE_PID_KI (0.01f)
 #define LINE_PID_KD (0.0f)
 #define LINE_PID_INTEGRAL_LIMIT (2000.0f)
-#define LINE_PID_DEADBAND_RPM_OFFSET (8) /* within this => straight */
-#define LINE_ERR_DEADBAND (5) /* |err|<=5 treated as centered */
-#define LINE_ERR_ABS_FALLBACK (30) /* when no sensor active */
+#define LINE_PID_DEADBAND_RPM_OFFSET (8) /* 输出在此范围内时保持直行 */
+#define LINE_ERR_DEADBAND (5) /* |err|<=5 时认为车身已居中 */
+#define LINE_ERR_ABS_FALLBACK (30) /* 丢线时采用的绝对误差 */
 #define LINE_DEBUG_PRINT_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
-/* Debounce: require this many equal samples before accepting a bit flip. */
+/* 传感器消抖：连续达到该次数后才接受通道状态翻转。 */
 #define LINE_SENSOR_DEBOUNCE_SAMPLES (2U)
 
 /*
@@ -81,6 +81,7 @@
 #define MOTOR_C_FORWARD_SIGN (1)
 #define MOTOR_D_FORWARD_SIGN (1)
 
+/* ======================== 四路电机硬件配置 ======================== */
 static MotorControl gMotorA;
 static const MotorControl_Config gMotorAConfig = {
     .pwmInstance = PWM_MOTOR_AB_INST,
@@ -189,6 +190,7 @@ static const MotorControl_Config gMotorDConfig = {
     .zeroSpeedBrakeMaxPercent = 40.0f,
 };
 
+/* ======================== 车辆与定角转向配置 ======================== */
 static CarControl gCar;
 static const CarControl_Config gCarConfig = {
     .rightRearMotor = &gMotorA,
@@ -223,20 +225,13 @@ static const AngleTurnControl_Config gAngleTurnConfig = {
     .timeoutSamples = 1500U,
 };
 
+/* ======================== 串口接收与外设状态 ======================== */
 static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
 static volatile bool gMpu6050SampleDue;
-static volatile bool gOpenMvTask2NumberPending;
-static volatile bool gOpenMvTask3NumberPending;
-static volatile bool gOpenMvNumberValid;
-static volatile uint8_t gOpenMvNumber;
-static volatile Task2Control_Turn gOpenMvTurnPending;
-static volatile uint8_t gOpenMvDisplayPending;
-static uint8_t gOpenMvLastDisplayed;
-static uint8_t gOpenMvLastDisplayedTask;
 
-/* OpenMV UART1 receive monitor, controlled by UART0 commands O/O1/O0. */
+/* OpenMV 串口接收监视，由 UART0 的 O/O1/O0 命令控制。 */
 static volatile uint8_t
     gOpenMvDebugRxBuffer[OPENMV_DEBUG_RX_BUFFER_SIZE];
 static volatile uint8_t gOpenMvDebugRxHead;
@@ -260,6 +255,7 @@ static bool gOledReady;
 static bool gGrayscaleStreamEnabled;
 static uint8_t gGrayscaleStreamDivider;
 
+/* ======================== 巡线与任务状态 ======================== */
 static bool gLineTrackingEnabled;
 static bool gLineTrackingDebugEnabled;
 static int16_t gLineTrackingBaseSpeedRpm;
@@ -271,12 +267,13 @@ static uint8_t gLinePendingValues[GRAYSCALE_SENSOR_CHANNELS];
 static uint8_t gLinePendingCount[GRAYSCALE_SENSOR_CHANNELS];
 static bool gLineFilterReady;
 static Task1Control gTask1Control;
-static Task2Control gTask2Control;
-static Task3Control gTask3Control;
-
 static bool gMotorStatusStreamEnabled;
 static bool gMotorStatusReportOnce;
 
+/* 全局毫秒时基，同时提供给 stopwatch.c 读取。 */
+volatile uint64_t systick_ms = 0;
+
+/* MPU6050 标定期间把剩余秒数显示到 OLED。 */
 static void OLED_showCalibrationProgress(uint8_t secondsRemaining)
 {
     if (gOledReady) {
@@ -284,6 +281,7 @@ static void OLED_showCalibrationProgress(uint8_t secondsRemaining)
     }
 }
 
+/* 通过调试串口 UART0 阻塞发送一个以 '\0' 结尾的字符串。 */
 static void UART_sendString(const char *text)
 {
     while (*text != '\0') {
@@ -304,6 +302,7 @@ static void UART3_sendCommandLine(uint8_t startIndex)
     DL_UART_Main_transmitDataBlocking(UART_1_INST, (uint8_t) '\n');
 }
 
+/* 不依赖 printf，将有符号 32 位整数转换为十进制文本发送。 */
 static void UART_sendInt32(int32_t value)
 {
     char digits[10];
@@ -330,6 +329,7 @@ static void UART_sendInt32(int32_t value)
     }
 }
 
+/* 发送一个固定两位的十六进制字节。 */
 static void UART_sendHex8(uint8_t value)
 {
     static const char hexDigits[] = "0123456789ABCDEF";
@@ -340,6 +340,7 @@ static void UART_sendHex8(uint8_t value)
         UART_0_INST, (uint8_t) hexDigits[value & 0x0FU]);
 }
 
+/* 输出 UART0 可用的调试与控制命令。 */
 static void UART_printHelp(void)
 {
     UART_sendString("\r\n");
@@ -382,6 +383,7 @@ static void UART_printHelp(void)
     UART_sendString("=====================================\r\n");
 }
 
+/* 上电后打印固件版本、硬件配置和当前功能提示。 */
 static void UART_printBanner(void)
 {
     UART_sendString("\r\n");
@@ -486,6 +488,7 @@ static void UART_reportMotorStatusVofa(
     UART_sendString("\r\n");
 }
 
+/* 按命令请求，以可读文本或 VOFA 格式输出四路电机状态。 */
 static void UART_serviceMotorStatus(void)
 {
     static MotorControl_Status motorAStatus;
@@ -543,6 +546,7 @@ static void UART_serviceMotorStatus(void)
         }
     }
 }
+/* 输出 MPU6050 当前累计 Z 轴角度和角速度。 */
 static void UART_reportZAngle(void)
 {
     float angle = MPU6050_Angle_getZDegrees();
@@ -571,6 +575,7 @@ static void UART_reportZAngle(void)
     UART_sendString(" deg\r\n");
 }
 
+/* 读取并输出一次八路灰度传感器的数字状态。 */
 static void UART_reportGrayscale(void)
 {
     uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
@@ -601,6 +606,7 @@ static void UART_reportGrayscaleVofa(const uint8_t *values)
     UART_sendString("\r\n");
 }
 
+/* 清除巡线 PID、传感器滤波以及丢线方向记忆。 */
 static void LineTracking_resetPid(void)
 {
     uint8_t i;
@@ -688,7 +694,7 @@ static int16_t LineTracking_computeErr(
         }
     }
 
-    /* Only center sensors on the line => treat as perfectly centered. */
+    /* 仅中央传感器压线时，直接认为车辆位于线路中心。 */
     if ((centerActive > 0U) && (outerActive == 0U)) {
         return 0;
     }
@@ -701,7 +707,7 @@ static int16_t LineTracking_computeErr(
         return err;
     }
 
-    /* Lost line: keep turning toward last known direction. */
+    /* 丢线后沿上一次误差方向继续寻找线路。 */
     if (gLineTrackingLastErr > 0) {
         return LINE_ERR_ABS_FALLBACK;
     }
@@ -732,7 +738,7 @@ static void LineTracking_applyMotion(int16_t pidRpmOffset)
         return;
     }
 
-    /* Convert PID output magnitude into inner-wheel speed reduction. */
+    /* 将 PID 输出绝对值换算为转弯内侧轮降速比例。 */
     if (pidAbs > speedRpm) {
         pidAbs = speedRpm;
     }
@@ -747,10 +753,10 @@ static void LineTracking_applyMotion(int16_t pidRpmOffset)
         innerPercent = 100U;
     }
     if (innerPercent == 0U) {
-        innerPercent = 1U; /* keep non-zero to avoid deadband sticking */
+        innerPercent = 1U; /* 保留最小非零输出，避免卡在电机死区 */
     }
 
-    /* pid sign: negative => line left => turn left */
+    /* PID 为负表示线路在左侧，车辆应向左修正。 */
     motion = (pidRpmOffset < 0) ? CAR_CONTROL_FORWARD_LEFT
                                  : CAR_CONTROL_FORWARD_RIGHT;
     CarControl_setMotion(&gCar, motion, speedRpm, innerPercent);
@@ -767,7 +773,7 @@ static void LineTracking_update(void)
     uint8_t activeCount = 0U;
     uint8_t i;
 
-    /* Read sensors (X1..X8), then debounce chatter. */
+    /* 读取 X1～X8，并对通道跳变做软件消抖。 */
     Grayscale_Sensor_ReadAll(rawValues);
     LineTracking_filterSensors(rawValues, values);
     for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
@@ -778,7 +784,7 @@ static void LineTracking_update(void)
 
     err = LineTracking_computeErr(values);
     if ((activeCount == 0U) || (err == 0)) {
-        /* Prevent windup when centered or line is lost. */
+        /* 居中或丢线时清积分，防止积分饱和。 */
         gLineTrackingIntegral = 0.0f;
     } else {
         gLineTrackingIntegral += (float) err;
@@ -794,7 +800,7 @@ static void LineTracking_update(void)
         (LINE_PID_KI * gLineTrackingIntegral) +
         (LINE_PID_KD * derivative);
 
-    /* Clamp pid to keep within speed reduction range. */
+    /* PID 限幅，保证换算后的内侧轮速度比例有效。 */
     {
         int16_t maxOffset = gLineTrackingBaseSpeedRpm;
         if (maxOffset < 0) {
@@ -832,10 +838,10 @@ static void LineTracking_update(void)
 
 static void Task1_lineTrackingSetEnabled(bool enabled)
 {
+    /* 三个任务共用此适配接口来启停底层巡线。 */
     gLineTrackingEnabled = enabled;
     gLineTrackingDebugEnabled = false;
 }
-
 /*
  * Print at most one monitored OpenMV byte per main-loop pass so UART0
  * diagnostics cannot occupy the foreground indefinitely.
@@ -932,6 +938,7 @@ static uint8_t Task1_readActiveChannelCount(void)
     return activeCount;
 }
 
+/* 从 UART 命令指定位置解析一个无符号十进制整数。 */
 static bool Car_parseUnsignedValue(
     uint8_t *index, uint16_t maximum, uint16_t *value)
 {
@@ -962,6 +969,7 @@ static bool Car_parseUnsignedValue(
  * Parse optional signed RPM after a motor letter.
  * Empty => 0. Accepts forms like "200", "-150", "+80".
  */
+/* 解析可选的带符号 RPM；参数缺省时沿用上一速度。 */
 static bool Car_parseOptionalSignedRpm(
     uint8_t startIndex, int16_t *rpm)
 {
@@ -1003,6 +1011,7 @@ static bool Car_parseOptionalSignedRpm(
     return true;
 }
 
+/* 单电机测试时补偿该电机的车辆安装方向符号。 */
 static void Car_setSingleMotorChassisRpm(
     char motorName, int16_t chassisRpm)
 {
@@ -1044,6 +1053,7 @@ static void Car_setSingleMotorChassisRpm(
     UART_sendString("\r\n");
 }
 
+/* 解析定角转向命令中的角度和可选 RPM。 */
 static bool Car_parseAngleTurnParameters(
     uint8_t startIndex, float *angleDegrees, int16_t *maximumRpm)
 {
@@ -1108,6 +1118,7 @@ static bool Car_parseAngleTurnParameters(
     return true;
 }
 
+/* 解析普通车辆动作命令的速度和内侧轮比例。 */
 static bool Car_parseCommandParameters(uint8_t startIndex,
     int16_t *speedRpm, bool *speedSpecified,
     uint8_t *turnInnerPercent, bool *turnSpecified)
@@ -1156,6 +1167,7 @@ static bool Car_parseCommandParameters(uint8_t startIndex,
     return (gUartCommand[index] == '\0');
 }
 
+/* 取出一条完整 UART0 命令并分派到电机、车辆或调试功能。 */
 static void Car_processUartCommand(void)
 {
     uint8_t index = 0U;
@@ -1218,7 +1230,7 @@ static void Car_processUartCommand(void)
         return;
     }
 
-    /* Manual motion commands cancel line tracking. */
+    /* 手动运动命令优先级更高，执行前必须取消自动巡线。 */
     if (gLineTrackingEnabled && (command != 'I') &&
         ((command == 'X') || (command == 'T') ||
          (command == 'F') || (command == 'B') ||
@@ -1243,10 +1255,8 @@ static void Car_processUartCommand(void)
 
     if (command == 'X') {
         Task1Control_reset(&gTask1Control);
-        Task2Control_reset(&gTask2Control);
-        Task3Control_reset(&gTask3Control);
         AngleTurnControl_cancel(&gAngleTurn);
-        /* X is an emergency stop: immediately remove motor drive. */
+        /* X 为紧急停车：立即撤销所有电机驱动。 */
         CarControl_emergencyStop(&gCar);
         gLineTrackingEnabled = false;
         gLineTrackingDebugEnabled = false;
@@ -1650,6 +1660,7 @@ static void Car_processUartCommand(void)
     UART_sendString("\r\n");
 }
 
+/* ======================== 主程序入口 ======================== */
 int main(void)
 {
     SYSCFG_DL_init();
@@ -1719,9 +1730,8 @@ int main(void)
             .readActiveChannelMask = Task1_readActiveChannelMask,
             .log = UART_sendString,
         };
+
         Task1Control_init(&gTask1Control, &taskIo);
-        Task2Control_init(&gTask2Control, &taskIo);
-        Task3Control_init(&gTask3Control, &taskIo);
     }
     UART_sendString(
         "GRAYSCALE OK  AD0=PB17 AD1=PA14 AD2=PA15 OUT=PB24\r\n");
@@ -1781,87 +1791,18 @@ int main(void)
 
             TaskManager_update();
             {
-                TaskManager_Task activeTask =
-                    TaskManager_getActiveTask();
-                TaskManager_Task2Endpoint task2Endpoint =
-                    TaskManager_getTask2Endpoint();
-                TaskManager_Task3Endpoint task3Endpoint =
-                    TaskManager_getTask3Endpoint();
-                bool task2UsesOpenMv =
-                    (task2Endpoint ==
-                        TASK_MANAGER_TASK2_ENDPOINT_AUTO);
-                bool task3UsesOpenMv =
-                    (task3Endpoint ==
-                        TASK_MANAGER_TASK3_ENDPOINT_AUTO);
-                bool statusPressed =
-                    TaskManager_takeStatusPressed();
-                bool statusReleased =
-                    TaskManager_takeStatusReleased();
-                bool task2NumberReceived =
-                    (activeTask == TASK_MANAGER_TASK_2) &&
-                    task2UsesOpenMv &&
-                    gOpenMvTask2NumberPending;
-                bool task3NumberReceived =
-                    (activeTask == TASK_MANAGER_TASK_3) &&
-                    task3UsesOpenMv &&
-                    gOpenMvTask3NumberPending;
-                Task2Control_Turn visualTurn = gOpenMvTurnPending;
+                TaskManager_Task activeTask = TaskManager_getActiveTask();
+                bool taskStartPressed = TaskManager_taskStartPressed();
+                bool statusPressed = TaskManager_takeStatusPressed();
+                bool statusReleased = TaskManager_takeStatusReleased();
 
-                if (task2NumberReceived) {
-                    gOpenMvTask2NumberPending = false;
-                } else if ((activeTask == TASK_MANAGER_TASK_2) &&
-                           !task2UsesOpenMv) {
-                    /* 预设端点不保留旧数字，切回 AUTO 后等待新视觉结果。 */
-                    gOpenMvTask2NumberPending = false;
-                }
-                if (task3NumberReceived) {
-                    gOpenMvTask3NumberPending = false;
-                } else if ((activeTask == TASK_MANAGER_TASK_3) &&
-                           !task3UsesOpenMv) {
-                    /* 预设端点不保留旧数字，切回 AUTO 后等待新视觉结果。 */
-                    gOpenMvTask3NumberPending = false;
-                }
-                gOpenMvTurnPending = TASK2_TURN_NONE;
-                Task1Control_update(&gTask1Control,
-                    activeTask, TaskManager_getTask1Endpoint(),
-                    statusPressed, statusReleased,
-                    gMpu6050Ready, angleTurnResult);
-                Task2Control_update(&gTask2Control,
-                    activeTask, task2Endpoint,
-                    statusPressed, statusReleased,
-                    task2NumberReceived,
-                    visualTurn, gMpu6050Ready, angleTurnResult);
-                Task3Control_update(&gTask3Control,
-                    activeTask, task3Endpoint,
-                    statusPressed, statusReleased,
-                    task3NumberReceived,
-                    visualTurn, gMpu6050Ready, angleTurnResult);
+                Task1Control_update(&gTask1Control, activeTask,
+                    TaskManager_getTask1Endpoint(), taskStartPressed, gMpu6050Ready, angleTurnResult);
             }
 
-            /* UART I remains available while Task1 waits for its load. */
             if (gLineTrackingEnabled &&
-                (TaskManager_getActiveTask() == TASK_MANAGER_TASK_1) &&
                 !Task1Control_isActive(&gTask1Control)) {
                 LineTracking_update();
-            }
-
-            if (gOpenMvLastDisplayedTask !=
-                (uint8_t) TaskManager_getActiveTask()) {
-                gOpenMvLastDisplayed = 0U;
-                gOpenMvLastDisplayedTask =
-                    (uint8_t) TaskManager_getActiveTask();
-                if (gOpenMvNumberValid &&
-                    ((TaskManager_getActiveTask() ==
-                        TASK_MANAGER_TASK_2 &&
-                      TaskManager_getTask2Endpoint() ==
-                        TASK_MANAGER_TASK2_ENDPOINT_AUTO) ||
-                     (TaskManager_getActiveTask() ==
-                        TASK_MANAGER_TASK_3 &&
-                      TaskManager_getTask3Endpoint() ==
-                        TASK_MANAGER_TASK3_ENDPOINT_AUTO))) {
-                    gOpenMvDisplayPending = (uint8_t)
-                        ((uint8_t) '0' + gOpenMvNumber);
-                }
             }
         }
 
@@ -1870,47 +1811,6 @@ int main(void)
             gUartCommandReady = false;
         }
 
-        /*
-         * OLED I2C writes are blocking, so service them outside the 10 ms
-         * motion-control block. Repeated OpenMV frames do not redraw the
-         * same message.
-         */
-        if (gOpenMvDisplayPending != 0U) {
-            uint8_t displayCode = gOpenMvDisplayPending;
-
-            gOpenMvDisplayPending = 0U;
-            if (((TaskManager_getActiveTask() ==
-                    TASK_MANAGER_TASK_2 &&
-                  TaskManager_getTask2Endpoint() ==
-                    TASK_MANAGER_TASK2_ENDPOINT_AUTO) ||
-                 (TaskManager_getActiveTask() ==
-                    TASK_MANAGER_TASK_3 &&
-                  TaskManager_getTask3Endpoint() ==
-                    TASK_MANAGER_TASK3_ENDPOINT_AUTO)) &&
-                gOledReady &&
-                (displayCode != gOpenMvLastDisplayed)) {
-                bool task2Selected =
-                    (TaskManager_getActiveTask() ==
-                    TASK_MANAGER_TASK_2);
-
-                if ((displayCode >= (uint8_t) '0') &&
-                    (displayCode <= (uint8_t) '9')) {
-                    uint8_t number = (uint8_t)
-                        (displayCode - (uint8_t) '0');
-
-                    gOledReady = task2Selected ?
-                        OLED_ShowTask2Number(number) :
-                        OLED_ShowTask3Number(number);
-                } else {
-                    gOledReady = task2Selected ?
-                        OLED_ShowTask2Turn((char) displayCode) :
-                        OLED_ShowTask3Turn((char) displayCode);
-                }
-                if (gOledReady) {
-                    gOpenMvLastDisplayed = displayCode;
-                }
-            }
-        }
 
         OpenMvDebug_service();
         UART3Forward_service();
@@ -1919,6 +1819,7 @@ int main(void)
     }
 }
 
+/* GPIO 组中断：处理 A/B/C/D 四路编码器 B 相边沿。 */
 void GROUP1_IRQHandler(void)
 {
     uint32_t gpioBInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
@@ -1945,6 +1846,7 @@ void GROUP1_IRQHandler(void)
     DL_GPIO_clearInterruptStatus(GPIOA, gpioAInterruptStatus);
 }
 
+/* 10 ms 定时中断：采样编码器、更新四路速度 PID 并置位 MPU 采样。 */
 void TIMER_PID_INST_IRQHandler(void)
 {
     switch (DL_TimerA_getPendingInterrupt(TIMER_PID_INST)) {
@@ -1954,12 +1856,15 @@ void TIMER_PID_INST_IRQHandler(void)
             MotorControl_update(&gMotorC);
             MotorControl_update(&gMotorD);
             gMpu6050SampleDue = true;
+
+            systick_ms += 10;
             break;
         default:
             break;
     }
 }
 
+/* UART0 接收中断：收集一行调试命令，遇到回车后交给主循环。 */
 void UART_0_INST_IRQHandler(void)
 {
     uint8_t rxData;
@@ -1990,6 +1895,7 @@ void UART_0_INST_IRQHandler(void)
     }
 }
 
+/* OpenMV 串口中断：解析视觉数字和左/右转向字符。 */
 void UART_OPENMV_INST_IRQHandler(void)
 {
     uint8_t rxData;
@@ -2001,7 +1907,7 @@ void UART_OPENMV_INST_IRQHandler(void)
     }
     rxData = DL_UART_Main_receiveData(UART_OPENMV_INST);
 
-    /* O1 monitor: enqueue without blocking inside the UART1 ISR. */
+    /* O1 监视模式只在中断中入队，不在中断内阻塞发送。 */
     if (gOpenMvDebugEnabled) {
         nextHead = (uint8_t) ((gOpenMvDebugRxHead + 1U) &
             (OPENMV_DEBUG_RX_BUFFER_SIZE - 1U));
@@ -2013,24 +1919,6 @@ void UART_OPENMV_INST_IRQHandler(void)
         }
     }
 
-    if ((rxData >= (uint8_t) '0') && (rxData <= (uint8_t) '9')) {
-        gOpenMvNumber = (uint8_t) (rxData - (uint8_t) '0');
-        /*
-         * Task selection cycles through Task2 before Task3. Keep an
-         * independent event for each task so Task2 cannot consume Task3's
-         * initial vision result while the user is switching modes.
-         */
-        gOpenMvTask2NumberPending = true;
-        gOpenMvTask3NumberPending = true;
-        gOpenMvNumberValid = true;
-        gOpenMvDisplayPending = rxData;
-    } else if ((rxData == (uint8_t) 'L') || (rxData == (uint8_t) 'l')) {
-        gOpenMvTurnPending = TASK2_TURN_LEFT;
-        gOpenMvDisplayPending = (uint8_t) 'L';
-    } else if ((rxData == (uint8_t) 'R') || (rxData == (uint8_t) 'r')) {
-        gOpenMvTurnPending = TASK2_TURN_RIGHT;
-        gOpenMvDisplayPending = (uint8_t) 'R';
-    }
 }
 
 /* UART3 RX 中断：只入队，实际转发由主循环完成。 */

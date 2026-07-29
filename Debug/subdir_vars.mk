@@ -18,6 +18,7 @@ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_file
 ../motor_control.c \
 ../mpu6050_angle.c \
 ../oled.c \
+../stopwatch.c \
 ../task1_control.c \
 ../task2_control.c \
 ../task3_control.c \
@@ -41,6 +42,7 @@ C_DEPS += \
 ./motor_control.d \
 ./mpu6050_angle.d \
 ./oled.d \
+./stopwatch.d \
 ./task1_control.d \
 ./task2_control.d \
 ./task3_control.d \
@@ -59,6 +61,7 @@ OBJS += \
 ./motor_control.o \
 ./mpu6050_angle.o \
 ./oled.o \
+./stopwatch.o \
 ./task1_control.o \
 ./task2_control.o \
 ./task3_control.o \
@@ -79,6 +82,7 @@ OBJS__QUOTED += \
 "motor_control.o" \
 "mpu6050_angle.o" \
 "oled.o" \
+"stopwatch.o" \
 "task1_control.o" \
 "task2_control.o" \
 "task3_control.o" \
@@ -99,6 +103,7 @@ C_DEPS__QUOTED += \
 "motor_control.d" \
 "mpu6050_angle.d" \
 "oled.d" \
+"stopwatch.d" \
 "task1_control.d" \
 "task2_control.d" \
 "task3_control.d" \
@@ -119,6 +124,7 @@ C_SRCS__QUOTED += \
 "../motor_control.c" \
 "../mpu6050_angle.c" \
 "../oled.c" \
+"../stopwatch.c" \
 "../task1_control.c" \
 "../task2_control.c" \
 "../task3_control.c" \
