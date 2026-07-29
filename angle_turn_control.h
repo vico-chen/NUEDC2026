@@ -17,14 +17,11 @@ typedef struct {
     CarControl *car;
     int8_t leftTurnYawSign;
     int16_t defaultCruiseRpm;
+    /* 以下滑行/补角参数仅为兼容现有配置保留，连续模式不再使用。 */
     int16_t creepRpm;
-    /*
-     * Predicted coast distance = clamp(tolerance + gain * approachRate,
-     *                                  tolerance, brakeAheadMax).
-     */
     float brakeRateGain;
     float brakeAheadMaxDegrees;
-    /* Acceptable final error for DONE. */
+    /* 达到该角度误差后立即关闭驱动并判定转向完成。 */
     float angleToleranceDegrees;
     float stoppedRateToleranceDps;
     uint16_t settleSamples;

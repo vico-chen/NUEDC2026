@@ -18,8 +18,6 @@ typedef struct {
     void (*updateLineTracking)(void);
     uint8_t (*readActiveChannelCount)(void);
     uint8_t (*readActiveChannelMask)(void);
-    void (*setRedLed)(bool enabled);
-    void (*setGreenLed)(bool enabled);
     void (*log)(const char *text);
 } Task1Control_Config;
 

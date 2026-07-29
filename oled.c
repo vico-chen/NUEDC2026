@@ -100,9 +100,11 @@ static const uint8_t *OLED_getGlyph(char character)
     static const uint8_t K[5] = {0x7FU, 0x08U, 0x14U, 0x22U, 0x41U};
     static const uint8_t L[5] = {0x7FU, 0x40U, 0x40U, 0x40U, 0x40U};
     static const uint8_t N[5] = {0x7FU, 0x04U, 0x08U, 0x10U, 0x7FU};
+    static const uint8_t O[5] = {0x3EU, 0x41U, 0x41U, 0x41U, 0x3EU};
     static const uint8_t R[5] = {0x7FU, 0x09U, 0x19U, 0x29U, 0x46U};
     static const uint8_t S[5] = {0x46U, 0x49U, 0x49U, 0x49U, 0x31U};
     static const uint8_t T[5] = {0x01U, 0x01U, 0x7FU, 0x01U, 0x01U};
+    static const uint8_t U[5] = {0x3FU, 0x40U, 0x40U, 0x40U, 0x3FU};
     static const uint8_t one[5] = {0x00U, 0x42U, 0x7FU, 0x40U, 0x00U};
     static const uint8_t two[5] = {0x42U, 0x61U, 0x51U, 0x49U, 0x46U};
     static const uint8_t three[5] = {0x21U, 0x41U, 0x45U, 0x4BU, 0x31U};
@@ -132,9 +134,11 @@ static const uint8_t *OLED_getGlyph(char character)
         case 'K': return K;
         case 'L': return L;
         case 'N': return N;
+        case 'O': return O;
         case 'R': return R;
         case 'S': return S;
         case 'T': return T;
+        case 'U': return U;
         default: return space;
     }
 }
@@ -204,6 +208,23 @@ bool OLED_ShowTask1Endpoint(uint8_t endpointNumber)
     return OLED_clear() && OLED_writeString(34U, 3U, endpointText);
 }
 
+bool OLED_ShowTask2Endpoint(uint8_t endpointNumber)
+{
+    char endpointText[] = "TASK2 END1";
+
+    if (endpointNumber == 0U) {
+        return OLED_clear() &&
+            OLED_writeString(34U, 3U, "TASK2 AUTO");
+    }
+    if (endpointNumber > 2U) {
+        return false;
+    }
+
+    endpointText[9] = (char) ('0' + endpointNumber);
+    return OLED_clear() &&
+        OLED_writeString(34U, 3U, endpointText);
+}
+
 bool OLED_ShowTask2Number(uint8_t number)
 {
     char numberText[] = "TASK2 NUM0";
@@ -251,6 +272,23 @@ bool OLED_ShowTask3Turn(char direction)
     }
     turnText[6] = direction;
     return OLED_writeString(34U, 3U, turnText);
+}
+
+bool OLED_ShowTask3Endpoint(uint8_t endpointNumber)
+{
+    char endpointText[] = "TASK3 END1";
+
+    if (endpointNumber == 0U) {
+        return OLED_clear() &&
+            OLED_writeString(34U, 3U, "TASK3 AUTO");
+    }
+    if (endpointNumber > 4U) {
+        return false;
+    }
+
+    endpointText[9] = (char) ('0' + endpointNumber);
+    return OLED_clear() &&
+        OLED_writeString(34U, 3U, endpointText);
 }
 
 bool OLED_ShowCalibration(uint8_t secondsRemaining)

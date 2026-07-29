@@ -1,21 +1,21 @@
 #include "task3_control.h"
 
-#define TASK3_OUTBOUND_CRUISE_RPM         (110)
+#define TASK3_OUTBOUND_CRUISE_RPM         (150)
 #define TASK3_RETURN_CRUISE_RPM           (110)
 #define TASK3_RAMP_SAMPLES                (20U) /* 0.20 s */
 #define TASK3_INTERSECTION_THRESHOLD      (6U)
 #define TASK3_INTERSECTION_CONFIRM        (2U)
-#define TASK3_ADVANCE_SAMPLES             (22U) /* 0.22 s */
+#define TASK3_ADVANCE_SAMPLES             (16U) /* 0.22 s */
 #define TASK3_MIN_BRAKE_SAMPLES           (15U)
 #define TASK3_BRAKE_TIMEOUT_SAMPLES       (80U)
 #define TASK3_TURN_DEGREES                (85.0f)
-#define TASK3_LEFT_AS_RIGHT_DEGREES       (270.0f)
 #define TASK3_TURN_RPM                    (100)
 #define TASK3_REQUIRED_TURNS              (2U)
+#define TASK3_PRESET_FIRST_TURN_CROSS      (3U)
 #define TASK3_RETURN_TURN_DEGREES         (180.0f)
 #define TASK3_LEFT_SENSOR_MASK            (0x0FU) /* X1..X4 */
 #define TASK3_RIGHT_SENSOR_MASK           (0xF0U) /* X5..X8 */
-#define TASK3_BLANK_CONFIRM_SAMPLES       (3U)
+#define TASK3_BLANK_CONFIRM_SAMPLES       (10U)
 #define TASK3_REVERSE_RPM                 (75)
 #define TASK3_REVERSE_SAMPLES             (50U) /* 0.50 s */
 #define TASK3_FINAL_SETTLE_SAMPLES        (5U)
@@ -116,6 +116,31 @@ static uint8_t Task3Control_countActiveChannels(uint8_t activeMask)
     return activeCount;
 }
 
+/*
+ * Endpoint 预设的两次去程转向：
+ *   END1：左、左    END2：左、右
+ *   END3：右、左    END4：右、右
+ * AUTO 返回 NONE，由 OpenMV 提供原方案中的转向指令。
+ */
+static Task2Control_Turn Task3Control_getPresetTurn(
+    TaskManager_Task3Endpoint endpoint, uint8_t turnIndex)
+{
+    if ((endpoint == TASK_MANAGER_TASK3_ENDPOINT_AUTO) ||
+        (turnIndex >= TASK3_REQUIRED_TURNS)) {
+        return TASK2_TURN_NONE;
+    }
+
+    if (turnIndex == 0U) {
+        return ((endpoint == TASK_MANAGER_TASK3_ENDPOINT_1) ||
+                (endpoint == TASK_MANAGER_TASK3_ENDPOINT_2)) ?
+            TASK2_TURN_LEFT : TASK2_TURN_RIGHT;
+    }
+
+    return ((endpoint == TASK_MANAGER_TASK3_ENDPOINT_1) ||
+            (endpoint == TASK_MANAGER_TASK3_ENDPOINT_3)) ?
+        TASK2_TURN_LEFT : TASK2_TURN_RIGHT;
+}
+
 static void Task3Control_beginPidBrake(Task3Control *control,
     Task3Control_State nextState)
 {
@@ -132,6 +157,7 @@ void Task3Control_reset(Task3Control *control)
     control->pendingTurn = TASK2_TURN_NONE;
     control->completedTurns = 0U;
     control->completedReturnTurns = 0U;
+    control->outboundIntersectionsSeen = 0U;
     control->rampSamples = 0U;
     control->intersectionConfirmSamples = 0U;
     control->advanceSamples = 0U;
@@ -143,12 +169,13 @@ void Task3Control_reset(Task3Control *control)
     control->intersectionArmed = false;
     control->returning = false;
     control->uTurn = false;
+    control->visionNumberReady = false;
+    control->selectedEndpoint =
+        TASK_MANAGER_TASK3_ENDPOINT_AUTO;
     control->io.setLineTrackingEnabled(false);
     control->io.resetLineTracking();
     AngleTurnControl_cancel(control->io.angleTurn);
     CarControl_stop(control->io.car);
-    control->io.setRedLed(false);
-    control->io.setGreenLed(false);
 }
 
 void Task3Control_init(Task3Control *control,
@@ -159,7 +186,8 @@ void Task3Control_init(Task3Control *control,
 }
 
 void Task3Control_update(Task3Control *control, TaskManager_Task task,
-    bool statusPressed, bool statusReleased, bool numberReceived,
+    TaskManager_Task3Endpoint endpoint, bool statusPressed,
+    bool statusReleased, bool numberReceived,
     Task2Control_Turn visualTurn, bool mpuReady,
     AngleTurnControl_Result turnResult)
 {
@@ -173,12 +201,34 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
         return;
     }
 
-    if (numberReceived && (control->state == TASK3_WAIT_INFO)) {
-        control->state = TASK3_WAIT_LOAD;
-        Task3Control_log(control, "TASK3 VISION NUMBER READY\r\n");
+    if (numberReceived) {
+        control->visionNumberReady = true;
+    }
+
+    /*
+     * 预设 endpoint 不依赖 OpenMV 数字，选择后即可等待装载；
+     * AUTO 则保持原方案，必须先收到视觉数字。
+     */
+    if (control->state == TASK3_WAIT_INFO) {
+        if (endpoint != TASK_MANAGER_TASK3_ENDPOINT_AUTO) {
+            control->state = TASK3_WAIT_LOAD;
+            Task3Control_log(control,
+                "TASK3 ENDPOINT READY, WAIT LOAD\r\n");
+        } else if (control->visionNumberReady) {
+            control->state = TASK3_WAIT_LOAD;
+            Task3Control_log(control,
+                "TASK3 VISION NUMBER READY\r\n");
+        }
+    } else if ((control->state == TASK3_WAIT_LOAD) &&
+               (endpoint == TASK_MANAGER_TASK3_ENDPOINT_AUTO) &&
+               !control->visionNumberReady) {
+        /* 从预设端点切回 AUTO 时，重新等待 OpenMV 数字。 */
+        control->state = TASK3_WAIT_INFO;
     }
 
     if ((visualTurn != TASK2_TURN_NONE) &&
+        (control->selectedEndpoint ==
+            TASK_MANAGER_TASK3_ENDPOINT_AUTO) &&
         (control->state == TASK3_FOLLOW) &&
         (control->completedTurns < TASK3_REQUIRED_TURNS) &&
         control->intersectionArmed &&
@@ -195,13 +245,24 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
 
     if (control->state == TASK3_WAIT_LOAD) {
         if (statusPressed) {
+            /* 启动后锁定本次端点，运行中按钮变化不影响当前路线。 */
+            control->selectedEndpoint = endpoint;
+            control->pendingTurn =
+                Task3Control_getPresetTurn(endpoint, 0U);
+            control->outboundIntersectionsSeen = 0U;
             control->rampSamples = 0U;
             control->intersectionArmed = true;
             control->io.setLineTrackingSpeed(0);
             control->io.setLineTrackingEnabled(true);
             control->io.resetLineTracking();
             control->state = TASK3_FOLLOW;
-            Task3Control_log(control, "TASK3 OUTBOUND STARTED\r\n");
+            if (endpoint == TASK_MANAGER_TASK3_ENDPOINT_AUTO) {
+                Task3Control_log(control,
+                    "TASK3 AUTO OUTBOUND STARTED\r\n");
+            } else {
+                Task3Control_log(control,
+                    "TASK3 ENDPOINT OUTBOUND STARTED\r\n");
+            }
         }
         return;
     }
@@ -219,6 +280,27 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                     control, activeCount) &&
                 (control->pendingTurn != TASK2_TURN_NONE) &&
                 (control->completedTurns < TASK3_REQUIRED_TURNS)) {
+                /*
+                 * 预设 endpoint 的第一次转向从第三个十字路口开始。
+                 * 前两个十字路口只计数并保持直行；离开当前路口后
+                 * intersectionArmed 才会重新置位，避免同一路口重复计数。
+                 */
+                if ((control->selectedEndpoint !=
+                        TASK_MANAGER_TASK3_ENDPOINT_AUTO) &&
+                    (control->completedTurns == 0U)) {
+                    if (control->outboundIntersectionsSeen < 255U) {
+                        control->outboundIntersectionsSeen++;
+                    }
+                    if (control->outboundIntersectionsSeen <
+                        TASK3_PRESET_FIRST_TURN_CROSS) {
+                        control->intersectionArmed = false;
+                        Task3Control_followLine(control);
+                        Task3Control_log(control,
+                            "TASK3 PRESET CROSS PASSED STRAIGHT\r\n");
+                        break;
+                    }
+                }
+
                 control->intersectionArmed = false;
                 control->io.setLineTrackingEnabled(false);
                 control->io.resetLineTracking();
@@ -341,20 +423,17 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
 
                 if (mpuReady &&
                     AngleTurnControl_start(control->io.angleTurn,
-                        false, turnLeft ?
-                            TASK3_LEFT_AS_RIGHT_DEGREES :
-                            TASK3_TURN_DEGREES,
+                        turnLeft, TASK3_TURN_DEGREES,
                         TASK3_TURN_RPM)) {
                     control->pendingTurn = TASK2_TURN_NONE;
                     control->uTurn = false;
                     control->state = TASK3_TURNING;
                     Task3Control_log(control, turnLeft ?
-                        "TASK3 LEFT ROUTE VIA RIGHT TURN 270deg\r\n" :
+                        "TASK3 LEFT TURN STARTED 85deg\r\n" :
                         "TASK3 RIGHT TURN STARTED\r\n");
                 } else {
                     CarControl_emergencyStop(control->io.car);
                     control->state = TASK3_FAULT;
-                    control->io.setRedLed(true);
                     Task3Control_log(control,
                         "TASK3 TURN START FAILED\r\n");
                 }
@@ -362,7 +441,6 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                 TASK3_BRAKE_TIMEOUT_SAMPLES) {
                 CarControl_emergencyStop(control->io.car);
                 control->state = TASK3_FAULT;
-                control->io.setRedLed(true);
                 Task3Control_log(control,
                     "TASK3 TURN BRAKE TIMEOUT\r\n");
             }
@@ -399,6 +477,13 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                         "TASK3 RETURN TURN1 DONE\r\n");
                 } else {
                     control->completedTurns++;
+                    if (control->selectedEndpoint !=
+                        TASK_MANAGER_TASK3_ENDPOINT_AUTO) {
+                        control->pendingTurn =
+                            Task3Control_getPresetTurn(
+                                control->selectedEndpoint,
+                                control->completedTurns);
+                    }
                     control->state = TASK3_FOLLOW;
                     Task3Control_log(control,
                         (control->completedTurns >=
@@ -411,7 +496,6 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                 (turnResult == ANGLE_TURN_RESULT_FAULT)) {
                 CarControl_emergencyStop(control->io.car);
                 control->state = TASK3_FAULT;
-                control->io.setRedLed(true);
                 Task3Control_log(control, "TASK3 TURN FAULT\r\n");
             }
             break;
@@ -431,7 +515,6 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                 TASK3_BRAKE_TIMEOUT_SAMPLES) {
                 CarControl_emergencyStop(control->io.car);
                 control->state = TASK3_FAULT;
-                control->io.setRedLed(true);
                 Task3Control_log(control,
                     "TASK3 END BRAKE TIMEOUT\r\n");
             }
@@ -462,14 +545,10 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                     CarControl_emergencyStop(control->io.car);
                     if (control->returning) {
                         control->state = TASK3_DONE;
-                        control->io.setRedLed(false);
-                        control->io.setGreenLed(true);
                         Task3Control_log(control,
                             "TASK3 RETURN DONE\r\n");
                     } else {
                         control->state = TASK3_WAIT_UNLOAD;
-                        control->io.setRedLed(true);
-                        control->io.setGreenLed(false);
                         Task3Control_log(control,
                             "TASK3 ARRIVED, WAIT UNLOAD\r\n");
                     }
@@ -483,7 +562,6 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                     TASK3_BRAKE_TIMEOUT_SAMPLES)) {
                 CarControl_emergencyStop(control->io.car);
                 control->state = TASK3_FAULT;
-                control->io.setRedLed(true);
                 Task3Control_log(control,
                     "TASK3 FINAL BRAKE TIMEOUT\r\n");
             }
@@ -491,8 +569,6 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
 
         case TASK3_WAIT_UNLOAD:
             if (statusReleased) {
-                control->io.setRedLed(false);
-                control->io.setGreenLed(false);
                 control->pendingTurn = TASK2_TURN_NONE;
                 control->completedReturnTurns = 0U;
                 control->blankSamples = 0U;
@@ -509,7 +585,6 @@ void Task3Control_update(Task3Control *control, TaskManager_Task task,
                 } else {
                     CarControl_emergencyStop(control->io.car);
                     control->state = TASK3_FAULT;
-                    control->io.setRedLed(true);
                     Task3Control_log(control,
                         "TASK3 RETURN UTURN START FAILED\r\n");
                 }

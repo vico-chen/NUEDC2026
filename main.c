@@ -46,8 +46,10 @@
 #include <stdint.h>
 
 #define MOTOR_MAX_TARGET_RPM (1000U)
-#define UART_COMMAND_BUFFER_SIZE (32U)
+#define UART_COMMAND_BUFFER_SIZE (128U)
 #define OPENMV_DEBUG_RX_BUFFER_SIZE (64U)
+#define UART3_FORWARD_RX_BUFFER_SIZE (128U)
+#define UART3_FORWARD_BYTES_PER_SERVICE (16U)
 #define CAR_DEFAULT_SPEED_RPM (200)
 #define CAR_DEFAULT_TURN_INNER_PERCENT (50U)
 #define ANGLE_TURN_DEFAULT_MAX_RPM (100)
@@ -82,13 +84,13 @@
 static MotorControl gMotorA;
 static const MotorControl_Config gMotorAConfig = {
     .pwmInstance = PWM_MOTOR_AB_INST,
-    .pwmChannel = DL_TIMER_CC_0_INDEX,
-    .directionIn1Port = GPIO_MOTOR_A_PORT,
-    .directionIn2Port = GPIO_MOTOR_A_PORT,
+    .pwmChannel = GPIO_PWM_MOTOR_AB_C0_IDX,
+    .directionIn1Port = GPIO_MOTOR_A_AIN_1_PORT,
+    .directionIn2Port = GPIO_MOTOR_A_AIN_2_PORT,
     .directionIn1Pin = GPIO_MOTOR_A_AIN_1_PIN,
     .directionIn2Pin = GPIO_MOTOR_A_AIN_2_PIN,
-    .encoderPhaseAPort = GPIO_MOTOR_A_PORT,
-    .encoderPhaseBPort = GPIO_MOTOR_A_PORT,
+    .encoderPhaseAPort = GPIO_MOTOR_A_EA_1_PORT,
+    .encoderPhaseBPort = GPIO_MOTOR_A_EB_1_PORT,
     .encoderPhaseAPin = GPIO_MOTOR_A_EA_1_PIN,
     .encoderPhaseBPin = GPIO_MOTOR_A_EB_1_PIN,
     .pwmPeriodCounts = 100U,
@@ -109,13 +111,13 @@ static const MotorControl_Config gMotorAConfig = {
 static MotorControl gMotorB;
 static const MotorControl_Config gMotorBConfig = {
     .pwmInstance = PWM_MOTOR_AB_INST,
-    .pwmChannel = DL_TIMER_CC_1_INDEX,
-    .directionIn1Port = GPIO_MOTOR_B_PORT,
-    .directionIn2Port = GPIO_MOTOR_B_PORT,
+    .pwmChannel = GPIO_PWM_MOTOR_AB_C1_IDX,
+    .directionIn1Port = GPIO_MOTOR_B_BIN_1_PORT,
+    .directionIn2Port = GPIO_MOTOR_B_BIN_2_PORT,
     .directionIn1Pin = GPIO_MOTOR_B_BIN_1_PIN,
     .directionIn2Pin = GPIO_MOTOR_B_BIN_2_PIN,
-    .encoderPhaseAPort = GPIO_MOTOR_B_PORT,
-    .encoderPhaseBPort = GPIO_MOTOR_B_PORT,
+    .encoderPhaseAPort = GPIO_MOTOR_B_EA_2_PORT,
+    .encoderPhaseBPort = GPIO_MOTOR_B_EB_2_PORT,
     .encoderPhaseAPin = GPIO_MOTOR_B_EA_2_PIN,
     .encoderPhaseBPin = GPIO_MOTOR_B_EB_2_PIN,
     .pwmPeriodCounts = 100U,
@@ -136,13 +138,13 @@ static const MotorControl_Config gMotorBConfig = {
 static MotorControl gMotorC;
 static const MotorControl_Config gMotorCConfig = {
     .pwmInstance = PWM_MOTOR_CD_INST,
-    .pwmChannel = DL_TIMER_CC_0_INDEX,
-    .directionIn1Port = GPIO_MOTOR_C_CIN_1_PORT,
-    .directionIn2Port = GPIO_MOTOR_C_CIN_2_PORT,
+    .pwmChannel = GPIO_PWM_MOTOR_CD_C0_IDX,
+    .directionIn1Port = GPIO_MOTOR_C_PORT,
+    .directionIn2Port = GPIO_MOTOR_C_PORT,
     .directionIn1Pin = GPIO_MOTOR_C_CIN_1_PIN,
     .directionIn2Pin = GPIO_MOTOR_C_CIN_2_PIN,
-    .encoderPhaseAPort = GPIO_MOTOR_C_EA_3_PORT,
-    .encoderPhaseBPort = GPIO_MOTOR_C_EB_3_PORT,
+    .encoderPhaseAPort = GPIO_MOTOR_C_PORT,
+    .encoderPhaseBPort = GPIO_MOTOR_C_PORT,
     .encoderPhaseAPin = GPIO_MOTOR_C_EA_3_PIN,
     .encoderPhaseBPin = GPIO_MOTOR_C_EB_3_PIN,
     .pwmPeriodCounts = 100U,
@@ -163,7 +165,7 @@ static const MotorControl_Config gMotorCConfig = {
 static MotorControl gMotorD;
 static const MotorControl_Config gMotorDConfig = {
     .pwmInstance = PWM_MOTOR_CD_INST,
-    .pwmChannel = DL_TIMER_CC_1_INDEX,
+    .pwmChannel = GPIO_PWM_MOTOR_CD_C1_IDX,
     .directionIn1Port = GPIO_MOTOR_D_DIN_1_PORT,
     .directionIn2Port = GPIO_MOTOR_D_DIN_2_PORT,
     .directionIn1Pin = GPIO_MOTOR_D_DIN_1_PIN,
@@ -241,6 +243,18 @@ static volatile uint8_t gOpenMvDebugRxHead;
 static volatile uint8_t gOpenMvDebugRxTail;
 static volatile bool gOpenMvDebugRxOverflow;
 static volatile bool gOpenMvDebugEnabled;
+
+/*
+ * UART3 接收转发队列：
+ * 中断中只保存数据，主循环再原样发到 UART0，避免在中断中阻塞。
+ * 缓冲区大小必须是 2 的整数次幂，便于通过位与完成环形回绕。
+ */
+static volatile uint8_t
+    gUart3ForwardRxBuffer[UART3_FORWARD_RX_BUFFER_SIZE];
+static volatile uint8_t gUart3ForwardRxHead;
+static volatile uint8_t gUart3ForwardRxTail;
+static volatile bool gUart3ForwardRxOverflow;
+
 static bool gMpu6050Ready;
 static bool gOledReady;
 static bool gGrayscaleStreamEnabled;
@@ -276,6 +290,18 @@ static void UART_sendString(const char *text)
         DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) *text);
         text++;
     }
+}
+
+/* 把 UART0 命令中 U3 后面的正文发送到 UART3，并自动补上 CRLF。 */
+static void UART3_sendCommandLine(uint8_t startIndex)
+{
+    while (gUartCommand[startIndex] != '\0') {
+        DL_UART_Main_transmitDataBlocking(
+            UART_1_INST, (uint8_t) gUartCommand[startIndex]);
+        startIndex++;
+    }
+    DL_UART_Main_transmitDataBlocking(UART_1_INST, (uint8_t) '\r');
+    DL_UART_Main_transmitDataBlocking(UART_1_INST, (uint8_t) '\n');
 }
 
 static void UART_sendInt32(int32_t value)
@@ -347,9 +373,11 @@ static void UART_printHelp(void)
     UART_sendString("\r\n");
     UART_sendString("[Status]\r\n");
     UART_sendString("  Y / Y0      yaw read / reset\r\n");
-    UART_sendString("  G / G1 / G0 grayscale once/stream/off\r\n");
-    UART_sendString("  M / M1 / M0 motor status once/stream/off\r\n");
+    UART_sendString("  G / G1 / G0 grayscale once/VOFA stream/off\r\n");
+    UART_sendString("  M / M1 / M0 motor once/VOFA FireWater stream/off\r\n");
     UART_sendString("  O / O1 / O0 OpenMV RX status/on/off\r\n");
+    UART_sendString("  U3 text     send text + CRLF to UART3 (9600 8N1)\r\n");
+    UART_sendString("              UART3 RX is forwarded to UART0\r\n");
     UART_sendString("  H or ?      this help\r\n");
     UART_sendString("=====================================\r\n");
 }
@@ -402,6 +430,62 @@ static void UART_reportMotorStatus(
     UART_sendString("]");
 }
 
+/*
+ * VOFA+ FireWater 电机数据帧。
+ *
+ * 通道顺序固定为：
+ *   A目标/A速度/A计数/A PWM，
+ *   B目标/B速度/B计数/B PWM，
+ *   C目标/C速度/C计数/C PWM，
+ *   D目标/D速度/D计数/D PWM。
+ *
+ * speedRpmTimes10 直接按一位小数发送，避免使用 printf 和浮点格式化，
+ * 减少单片机的代码体积及串口发送开销。
+ */
+static void UART_sendVofaMotorChannels(const MotorControl_Status *status)
+{
+    int32_t speedTimes10 = status->speedRpmTimes10;
+    uint32_t speedMagnitude;
+
+    UART_sendInt32((int32_t) status->targetRpm);
+    UART_sendString(",");
+
+    if (speedTimes10 < 0) {
+        DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) '-');
+        speedMagnitude =
+            (uint32_t) (-(speedTimes10 + 1)) + 1U;
+    } else {
+        speedMagnitude = (uint32_t) speedTimes10;
+    }
+    UART_sendInt32((int32_t) (speedMagnitude / 10U));
+    DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) '.');
+    DL_UART_Main_transmitDataBlocking(
+        UART_0_INST, (uint8_t) ('0' + (speedMagnitude % 10U)));
+
+    UART_sendString(",");
+    UART_sendInt32(status->encoderCounts);
+    UART_sendString(",");
+    UART_sendInt32((int32_t) status->pwmPercent);
+}
+
+static void UART_reportMotorStatusVofa(
+    const MotorControl_Status *motorA,
+    const MotorControl_Status *motorB,
+    const MotorControl_Status *motorC,
+    const MotorControl_Status *motorD)
+{
+    /* FireWater 必须使用换行符结束一帧。 */
+    UART_sendString("motor:");
+    UART_sendVofaMotorChannels(motorA);
+    UART_sendString(",");
+    UART_sendVofaMotorChannels(motorB);
+    UART_sendString(",");
+    UART_sendVofaMotorChannels(motorC);
+    UART_sendString(",");
+    UART_sendVofaMotorChannels(motorD);
+    UART_sendString("\r\n");
+}
+
 static void UART_serviceMotorStatus(void)
 {
     static MotorControl_Status motorAStatus;
@@ -436,14 +520,20 @@ static void UART_serviceMotorStatus(void)
 
     if (motorAStatusReady && motorBStatusReady && motorCStatusReady &&
         motorDStatusReady) {
-        UART_reportMotorStatus('A', &motorAStatus);
-        UART_sendString(",");
-        UART_reportMotorStatus('B', &motorBStatus);
-        UART_sendString(",");
-        UART_reportMotorStatus('C', &motorCStatus);
-        UART_sendString(",");
-        UART_reportMotorStatus('D', &motorDStatus);
-        UART_sendString("\r\n");
+        if (gMotorStatusStreamEnabled) {
+            UART_reportMotorStatusVofa(&motorAStatus, &motorBStatus,
+                &motorCStatus, &motorDStatus);
+        } else {
+            /* 单次查询仍使用带字段名的可读格式。 */
+            UART_reportMotorStatus('A', &motorAStatus);
+            UART_sendString(",");
+            UART_reportMotorStatus('B', &motorBStatus);
+            UART_sendString(",");
+            UART_reportMotorStatus('C', &motorCStatus);
+            UART_sendString(",");
+            UART_reportMotorStatus('D', &motorDStatus);
+            UART_sendString("\r\n");
+        }
         motorAStatusReady = false;
         motorBStatusReady = false;
         motorCStatusReady = false;
@@ -492,6 +582,20 @@ static void UART_reportGrayscale(void)
         UART_sendString(" X");
         UART_sendInt32((int32_t) (i + 1U));
         DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) ':');
+        UART_sendInt32((int32_t) values[i]);
+    }
+    UART_sendString("\r\n");
+}
+
+static void UART_reportGrayscaleVofa(const uint8_t *values)
+{
+    uint8_t i;
+
+    UART_sendString("gray:");
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        if (i > 0U) {
+            UART_sendString(",");
+        }
         UART_sendInt32((int32_t) values[i]);
     }
     UART_sendString("\r\n");
@@ -712,17 +816,13 @@ static void LineTracking_update(void)
         if (gLineTrackingDebugDivider >=
             LINE_DEBUG_PRINT_PERIOD_SAMPLES) {
             gLineTrackingDebugDivider = 0U;
-            UART_sendString("LINE dbg err=");
+            /* VOFA+ FireWater：err、PID输出、X1～X8。 */
+            UART_sendString("line:");
             UART_sendInt32((int32_t) err);
-            UART_sendString(" pid=");
+            UART_sendString(",");
             UART_sendInt32((int32_t) pidOffsetRpm);
-            UART_sendString(" ");
-            UART_sendString("GRAY");
             for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
-                UART_sendString(" X");
-                UART_sendInt32((int32_t) (i + 1U));
-                DL_UART_Main_transmitDataBlocking(
-                    UART_0_INST, (uint8_t) ':');
+                UART_sendString(",");
                 UART_sendInt32((int32_t) values[i]);
             }
             UART_sendString("\r\n");
@@ -774,41 +874,46 @@ static void OpenMvDebug_service(void)
     }
 }
 
+/*
+ * 每轮最多转发一小批数据。UART0 比 UART3 快，因此既能及时清空队列，
+ * 又不会让连续串口数据长时间占用主循环。
+ */
+static void UART3Forward_service(void)
+{
+    uint8_t serviced = 0U;
+
+    if (gUart3ForwardRxOverflow) {
+        gUart3ForwardRxOverflow = false;
+        UART_sendString("\r\nUART3_RX_BUFFER_OVERFLOW\r\n");
+    }
+
+    while ((gUart3ForwardRxTail != gUart3ForwardRxHead) &&
+           (serviced < UART3_FORWARD_BYTES_PER_SERVICE)) {
+        uint8_t rxData = gUart3ForwardRxBuffer[gUart3ForwardRxTail];
+
+        gUart3ForwardRxTail = (uint8_t)
+            ((gUart3ForwardRxTail + 1U) &
+             (UART3_FORWARD_RX_BUFFER_SIZE - 1U));
+        DL_UART_Main_transmitDataBlocking(UART_0_INST, rxData);
+        serviced++;
+    }
+}
+
 static void Task1_lineTrackingSetSpeed(int16_t speedRpm)
 {
     gLineTrackingBaseSpeedRpm = speedRpm;
-}
-
-static void Task1_setRedLed(bool enabled)
-{
-    /* The car's red LED is active-high: PB26 high turns it on. */
-    if (enabled) {
-        DL_GPIO_setPins(GPIO_LED_PORT, GPIO_LED_PIN_RED_PIN);
-    } else {
-        DL_GPIO_clearPins(GPIO_LED_PORT, GPIO_LED_PIN_RED_PIN);
-    }
-}
-
-static void Task1_setGreenLed(bool enabled)
-{
-    /* The car's green LED uses the same active-high wiring as the red LED. */
-    if (enabled) {
-        DL_GPIO_setPins(GPIO_LED_PORT, GPIO_LED_PIN_GREEN_PIN);
-    } else {
-        DL_GPIO_clearPins(GPIO_LED_PORT, GPIO_LED_PIN_GREEN_PIN);
-    }
 }
 
 static uint8_t Task1_readActiveChannelMask(void)
 {
     uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
     uint8_t activeMask = 0U;
-    uint8_t i;
+    uint8_t index;
 
     Grayscale_Sensor_ReadAll(values);
-    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
-        if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
-            activeMask |= (uint8_t) (1U << i);
+    for (index = 0U; index < GRAYSCALE_SENSOR_CHANNELS; index++) {
+        if (values[index] == LINE_TRACKING_ACTIVE_LEVEL) {
+            activeMask |= (uint8_t) (1U << index);
         }
     }
     return activeMask;
@@ -1083,6 +1188,36 @@ static void Car_processUartCommand(void)
         return;
     }
 
+    /*
+     * U3 <正文>：把正文发送到 UART3，并自动追加 \r\n。
+     * 正文保持原来的大小写；只输入 U3 时发送一组空的 CRLF。
+     */
+    if (command == 'U') {
+        if (gUartCommand[index] != '3') {
+            UART_sendString(
+                "UART3_FORMAT_ERROR usage: U3 <text>\r\n");
+            UART_hintHelp();
+            return;
+        }
+        index++;
+        if ((gUartCommand[index] != '\0') &&
+            (gUartCommand[index] != ' ') &&
+            (gUartCommand[index] != '\t')) {
+            UART_sendString(
+                "UART3_FORMAT_ERROR usage: U3 <text>\r\n");
+            UART_hintHelp();
+            return;
+        }
+        while ((gUartCommand[index] == ' ') ||
+               (gUartCommand[index] == '\t')) {
+            index++;
+        }
+
+        UART3_sendCommandLine(index);
+        UART_sendString("UART3_TX_OK\r\n");
+        return;
+    }
+
     /* Manual motion commands cancel line tracking. */
     if (gLineTrackingEnabled && (command != 'I') &&
         ((command == 'X') || (command == 'T') ||
@@ -1187,6 +1322,12 @@ static void Car_processUartCommand(void)
 
         gLineTrackingEnabled = true;
         gLineTrackingDebugEnabled = debug;
+        if (debug) {
+            /* VOFA 连续流互斥，保证每一帧的通道数和含义一致。 */
+            gGrayscaleStreamEnabled = false;
+            gMotorStatusStreamEnabled = false;
+            gMotorStatusReportOnce = false;
+        }
         LineTracking_resetPid();
         AngleTurnControl_cancel(&gAngleTurn);
         CarControl_stop(&gCar);
@@ -1208,18 +1349,6 @@ static void Car_processUartCommand(void)
         if (!gMpu6050Ready) {
             UART_sendString("MPU6050_ERROR\r\n");
             return;
-        }
-
-        /* 与自动任务保持一致：左转约 90°/180°统一改走右转。 */
-        if ((turnCommand == 'L') &&
-            (angleTurnDegrees >= 80.0f) &&
-            (angleTurnDegrees <= 100.0f)) {
-            turnCommand = 'R';
-            angleTurnDegrees = 270.0f;
-        } else if ((turnCommand == 'L') &&
-                   (angleTurnDegrees >= 170.0f) &&
-                   (angleTurnDegrees <= 190.0f)) {
-            turnCommand = 'R';
         }
 
         if (AngleTurnControl_start(&gAngleTurn,
@@ -1332,9 +1461,13 @@ static void Car_processUartCommand(void)
                 index++;
             }
             if (gUartCommand[index] == '\0') {
+                /* 开启灰度流时关闭其他 VOFA 连续流。 */
+                gLineTrackingDebugEnabled = false;
+                gMotorStatusStreamEnabled = false;
+                gMotorStatusReportOnce = false;
                 gGrayscaleStreamEnabled = true;
                 gGrayscaleStreamDivider = 0U;
-                UART_sendString("GRAY_STREAM_ON\r\n");
+                UART_sendString("GRAY_STREAM_ON VOFA_FIREWATER\r\n");
             } else {
                 UART_sendString("G_FORMAT_ERROR  usage: G | G1 | G0\r\n");
                 UART_hintHelp();
@@ -1376,9 +1509,12 @@ static void Car_processUartCommand(void)
                 index++;
             }
             if (gUartCommand[index] == '\0') {
+                /* 开启电机流时关闭其他 VOFA 连续流。 */
+                gLineTrackingDebugEnabled = false;
+                gGrayscaleStreamEnabled = false;
                 gMotorStatusStreamEnabled = true;
                 gMotorStatusReportOnce = false;
-                UART_sendString("MOTOR_STATUS_STREAM_ON\r\n");
+                UART_sendString("MOTOR_STATUS_STREAM_ON VOFA_FIREWATER\r\n");
             } else {
                 UART_sendString("M_FORMAT_ERROR  usage: M | M1 | M0\r\n");
                 UART_hintHelp();
@@ -1519,6 +1655,15 @@ int main(void)
     SYSCFG_DL_init();
 
     /*
+     * UART3 的内容始终转发到调试串口 UART0。显式打开外设接收中断，
+     * 这样旧的 SysConfig 生成文件也能立即工作。
+     */
+    DL_UART_Main_enableInterrupt(
+        UART_1_INST, DL_UART_MAIN_INTERRUPT_RX);
+    NVIC_ClearPendingIRQ(UART_1_INST_INT_IRQN);
+    NVIC_EnableIRQ(UART_1_INST_INT_IRQN);
+
+    /*
      * OpenMV may send its initial digit immediately after power-up. Enable
      * UART1 RX before the OLED setup and 5-second MPU calibration so that
      * this one-shot result is not lost.
@@ -1572,7 +1717,6 @@ int main(void)
             .updateLineTracking = LineTracking_update,
             .readActiveChannelCount = Task1_readActiveChannelCount,
             .readActiveChannelMask = Task1_readActiveChannelMask,
-            .setRedLed = Task1_setRedLed, .setGreenLed = Task1_setGreenLed,
             .log = UART_sendString,
         };
         Task1Control_init(&gTask1Control, &taskIo);
@@ -1580,15 +1724,15 @@ int main(void)
         Task3Control_init(&gTask3Control, &taskIo);
     }
     UART_sendString(
-        "GRAYSCALE OK  AD0=PB11 AD1=PB5 AD2=PA1 OUT=PA14\r\n");
+        "GRAYSCALE OK  AD0=PB17 AD1=PA14 AD2=PA15 OUT=PB24\r\n");
     UART_sendString("Ready. Send H for commands.\r\n");
 
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);
     NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
     NVIC_EnableIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
-    NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOA_INT_IRQN);
-    NVIC_EnableIRQ(GPIO_MULTIPLE_GPIOA_INT_IRQN);
+    NVIC_ClearPendingIRQ(GPIO_MOTOR_D_INT_IRQN);
+    NVIC_EnableIRQ(GPIO_MOTOR_D_INT_IRQN);
     NVIC_ClearPendingIRQ(TIMER_PID_INST_INT_IRQN);
     NVIC_EnableIRQ(TIMER_PID_INST_INT_IRQN);
 
@@ -1627,7 +1771,11 @@ int main(void)
                 if (gGrayscaleStreamDivider >=
                     GRAYSCALE_STREAM_PERIOD_SAMPLES) {
                     gGrayscaleStreamDivider = 0U;
-                    UART_reportGrayscale();
+                    {
+                        uint8_t grayscaleValues[GRAYSCALE_SENSOR_CHANNELS];
+                        Grayscale_Sensor_ReadAll(grayscaleValues);
+                        UART_reportGrayscaleVofa(grayscaleValues);
+                    }
                 }
             }
 
@@ -1635,22 +1783,42 @@ int main(void)
             {
                 TaskManager_Task activeTask =
                     TaskManager_getActiveTask();
+                TaskManager_Task2Endpoint task2Endpoint =
+                    TaskManager_getTask2Endpoint();
+                TaskManager_Task3Endpoint task3Endpoint =
+                    TaskManager_getTask3Endpoint();
+                bool task2UsesOpenMv =
+                    (task2Endpoint ==
+                        TASK_MANAGER_TASK2_ENDPOINT_AUTO);
+                bool task3UsesOpenMv =
+                    (task3Endpoint ==
+                        TASK_MANAGER_TASK3_ENDPOINT_AUTO);
                 bool statusPressed =
                     TaskManager_takeStatusPressed();
                 bool statusReleased =
                     TaskManager_takeStatusReleased();
                 bool task2NumberReceived =
                     (activeTask == TASK_MANAGER_TASK_2) &&
+                    task2UsesOpenMv &&
                     gOpenMvTask2NumberPending;
                 bool task3NumberReceived =
                     (activeTask == TASK_MANAGER_TASK_3) &&
+                    task3UsesOpenMv &&
                     gOpenMvTask3NumberPending;
                 Task2Control_Turn visualTurn = gOpenMvTurnPending;
 
                 if (task2NumberReceived) {
                     gOpenMvTask2NumberPending = false;
+                } else if ((activeTask == TASK_MANAGER_TASK_2) &&
+                           !task2UsesOpenMv) {
+                    /* 预设端点不保留旧数字，切回 AUTO 后等待新视觉结果。 */
+                    gOpenMvTask2NumberPending = false;
                 }
                 if (task3NumberReceived) {
+                    gOpenMvTask3NumberPending = false;
+                } else if ((activeTask == TASK_MANAGER_TASK_3) &&
+                           !task3UsesOpenMv) {
+                    /* 预设端点不保留旧数字，切回 AUTO 后等待新视觉结果。 */
                     gOpenMvTask3NumberPending = false;
                 }
                 gOpenMvTurnPending = TASK2_TURN_NONE;
@@ -1659,11 +1827,13 @@ int main(void)
                     statusPressed, statusReleased,
                     gMpu6050Ready, angleTurnResult);
                 Task2Control_update(&gTask2Control,
-                    activeTask, statusPressed, statusReleased,
+                    activeTask, task2Endpoint,
+                    statusPressed, statusReleased,
                     task2NumberReceived,
                     visualTurn, gMpu6050Ready, angleTurnResult);
                 Task3Control_update(&gTask3Control,
-                    activeTask, statusPressed, statusReleased,
+                    activeTask, task3Endpoint,
+                    statusPressed, statusReleased,
                     task3NumberReceived,
                     visualTurn, gMpu6050Ready, angleTurnResult);
             }
@@ -1682,9 +1852,13 @@ int main(void)
                     (uint8_t) TaskManager_getActiveTask();
                 if (gOpenMvNumberValid &&
                     ((TaskManager_getActiveTask() ==
-                        TASK_MANAGER_TASK_2) ||
+                        TASK_MANAGER_TASK_2 &&
+                      TaskManager_getTask2Endpoint() ==
+                        TASK_MANAGER_TASK2_ENDPOINT_AUTO) ||
                      (TaskManager_getActiveTask() ==
-                        TASK_MANAGER_TASK_3))) {
+                        TASK_MANAGER_TASK_3 &&
+                      TaskManager_getTask3Endpoint() ==
+                        TASK_MANAGER_TASK3_ENDPOINT_AUTO))) {
                     gOpenMvDisplayPending = (uint8_t)
                         ((uint8_t) '0' + gOpenMvNumber);
                 }
@@ -1706,9 +1880,13 @@ int main(void)
 
             gOpenMvDisplayPending = 0U;
             if (((TaskManager_getActiveTask() ==
-                    TASK_MANAGER_TASK_2) ||
+                    TASK_MANAGER_TASK_2 &&
+                  TaskManager_getTask2Endpoint() ==
+                    TASK_MANAGER_TASK2_ENDPOINT_AUTO) ||
                  (TaskManager_getActiveTask() ==
-                    TASK_MANAGER_TASK_3)) &&
+                    TASK_MANAGER_TASK_3 &&
+                  TaskManager_getTask3Endpoint() ==
+                    TASK_MANAGER_TASK3_ENDPOINT_AUTO)) &&
                 gOledReady &&
                 (displayCode != gOpenMvLastDisplayed)) {
                 bool task2Selected =
@@ -1735,6 +1913,7 @@ int main(void)
         }
 
         OpenMvDebug_service();
+        UART3Forward_service();
         UART_serviceMotorStatus();
         __WFI();
     }
@@ -1743,9 +1922,11 @@ int main(void)
 void GROUP1_IRQHandler(void)
 {
     uint32_t gpioBInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
-        GPIOB, GPIO_MOTOR_A_EB_1_PIN | GPIO_MOTOR_B_EB_2_PIN);
+        GPIOB, GPIO_MOTOR_A_EB_1_PIN |
+            GPIO_MOTOR_B_EB_2_PIN |
+            GPIO_MOTOR_C_EB_3_PIN);
     uint32_t gpioAInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
-        GPIOA, GPIO_MOTOR_C_EB_3_PIN | GPIO_MOTOR_D_EB_4_PIN);
+        GPIOA, GPIO_MOTOR_D_EB_4_PIN);
 
     if ((gpioBInterruptStatus & GPIO_MOTOR_A_EB_1_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorA);
@@ -1753,7 +1934,7 @@ void GROUP1_IRQHandler(void)
     if ((gpioBInterruptStatus & GPIO_MOTOR_B_EB_2_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorB);
     }
-    if ((gpioAInterruptStatus & GPIO_MOTOR_C_EB_3_PIN) != 0U) {
+    if ((gpioBInterruptStatus & GPIO_MOTOR_C_EB_3_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorC);
     }
     if ((gpioAInterruptStatus & GPIO_MOTOR_D_EB_4_PIN) != 0U) {
@@ -1849,5 +2030,28 @@ void UART_OPENMV_INST_IRQHandler(void)
     } else if ((rxData == (uint8_t) 'R') || (rxData == (uint8_t) 'r')) {
         gOpenMvTurnPending = TASK2_TURN_RIGHT;
         gOpenMvDisplayPending = (uint8_t) 'R';
+    }
+}
+
+/* UART3 RX 中断：只入队，实际转发由主循环完成。 */
+void UART_1_INST_IRQHandler(void)
+{
+    uint8_t rxData;
+    uint8_t nextHead;
+
+    if (DL_UART_Main_getPendingInterrupt(UART_1_INST) !=
+        DL_UART_MAIN_IIDX_RX) {
+        return;
+    }
+
+    rxData = DL_UART_Main_receiveData(UART_1_INST);
+    nextHead = (uint8_t)
+        ((gUart3ForwardRxHead + 1U) &
+         (UART3_FORWARD_RX_BUFFER_SIZE - 1U));
+    if (nextHead != gUart3ForwardRxTail) {
+        gUart3ForwardRxBuffer[gUart3ForwardRxHead] = rxData;
+        gUart3ForwardRxHead = nextHead;
+    } else {
+        gUart3ForwardRxOverflow = true;
     }
 }

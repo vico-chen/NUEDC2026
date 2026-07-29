@@ -26,6 +26,7 @@ typedef struct {
     Task2Control_Turn pendingTurn;
     uint8_t completedTurns;
     uint8_t completedReturnTurns;
+    uint8_t outboundIntersectionsSeen;
     uint8_t rampSamples;
     uint8_t intersectionConfirmSamples;
     uint8_t advanceSamples;
@@ -37,13 +38,16 @@ typedef struct {
     bool intersectionArmed;
     bool returning;
     bool uTurn;
+    bool visionNumberReady;
+    TaskManager_Task3Endpoint selectedEndpoint;
 } Task3Control;
 
 void Task3Control_init(Task3Control *control,
     const Task1Control_Config *io);
 void Task3Control_reset(Task3Control *control);
 void Task3Control_update(Task3Control *control, TaskManager_Task task,
-    bool statusPressed, bool statusReleased, bool numberReceived,
+    TaskManager_Task3Endpoint endpoint, bool statusPressed,
+    bool statusReleased, bool numberReceived,
     Task2Control_Turn visualTurn, bool mpuReady,
     AngleTurnControl_Result turnResult);
 

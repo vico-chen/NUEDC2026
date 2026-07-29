@@ -2,41 +2,15 @@
 #include "mpu6050_angle.h"
 
 /*
- * 全局转向策略：
- *   左转约 90°改由右转 270°完成；
- *   左转约 180°改为右转相同角度完成。
- * 统一在底层转换，避免上层任务代码更新后重新引入左转动作。
+ * 连续定角转向：
+ *   按固定巡航转速持续旋转，达到目标角度后立即关闭驱动并返回完成。
+ * 不再提前滑行、等待角速度下降或低速补角。
  */
-#define ANGLE_TURN_QUARTER_MIN_DEGREES    (80.0f)
-#define ANGLE_TURN_QUARTER_MAX_DEGREES    (100.0f)
-#define ANGLE_TURN_RIGHT_THREE_QUARTERS   (270.0f)
-#define ANGLE_TURN_HALF_MIN_DEGREES       (170.0f)
-#define ANGLE_TURN_HALF_MAX_DEGREES       (190.0f)
-
-/*
- * Accuracy-focused pivot profile without reverse hunting:
- *   SPIN  -> fixed cruise RPM, locked direction
- *   COAST -> start from rate-predicted remaining angle; no reverse brake
- *   CREEP -> if coast stops short, slow one-way finish to tolerance
- * Never reverse to correct overshoot.
- */
-
-static float AngleTurnControl_abs(float value)
-{
-    return (value < 0.0f) ? -value : value;
-}
 
 static float AngleTurnControl_getSignedYaw(
     const AngleTurnControl *control)
 {
     return MPU6050_Angle_getZDegrees() *
-           (float) control->config.leftTurnYawSign;
-}
-
-static float AngleTurnControl_getSignedRate(
-    const AngleTurnControl *control)
-{
-    return MPU6050_Angle_getZRateDps() *
            (float) control->config.leftTurnYawSign;
 }
 
@@ -50,32 +24,6 @@ static float AngleTurnControl_getRemainingDegrees(
     return control->turnDirection * (signedTarget - signedYaw);
 }
 
-static float AngleTurnControl_getApproachRateDps(
-    const AngleTurnControl *control)
-{
-    float approachRate =
-        control->turnDirection * AngleTurnControl_getSignedRate(control);
-
-    return (approachRate > 0.0f) ? approachRate : 0.0f;
-}
-
-static float AngleTurnControl_getCoastDistanceDegrees(
-    const AngleTurnControl *control)
-{
-    float distance =
-        control->config.angleToleranceDegrees +
-        control->config.brakeRateGain *
-            AngleTurnControl_getApproachRateDps(control);
-
-    if (distance < control->config.angleToleranceDegrees) {
-        distance = control->config.angleToleranceDegrees;
-    }
-    if (distance > control->config.brakeAheadMaxDegrees) {
-        distance = control->config.brakeAheadMaxDegrees;
-    }
-    return distance;
-}
-
 static void AngleTurnControl_commandPivot(
     AngleTurnControl *control, int16_t rpm)
 {
@@ -83,25 +31,6 @@ static void AngleTurnControl_commandPivot(
         (control->turnDirection > 0.0f) ? CAR_CONTROL_PIVOT_LEFT
                                         : CAR_CONTROL_PIVOT_RIGHT,
         rpm, control->config.car->turnInnerPercent);
-}
-
-static void AngleTurnControl_enterCoast(AngleTurnControl *control)
-{
-    CarControl_coast(control->config.car);
-    control->coasting = true;
-    control->creeping = false;
-    control->settledCount = 0U;
-    control->coastSamples = 0U;
-}
-
-static void AngleTurnControl_enterCreep(AngleTurnControl *control)
-{
-    control->coasting = false;
-    control->creeping = true;
-    control->settledCount = 0U;
-    control->coastSamples = 0U;
-    AngleTurnControl_commandPivot(
-        control, control->config.creepRpm);
 }
 
 void AngleTurnControl_init(
@@ -124,17 +53,6 @@ bool AngleTurnControl_start(AngleTurnControl *control, bool turnLeft,
 {
     if (relativeAngleDegrees <= 0.0f) {
         return false;
-    }
-
-    if (turnLeft &&
-        (relativeAngleDegrees >= ANGLE_TURN_QUARTER_MIN_DEGREES) &&
-        (relativeAngleDegrees <= ANGLE_TURN_QUARTER_MAX_DEGREES)) {
-        turnLeft = false;
-        relativeAngleDegrees = ANGLE_TURN_RIGHT_THREE_QUARTERS;
-    } else if (turnLeft &&
-               (relativeAngleDegrees >= ANGLE_TURN_HALF_MIN_DEGREES) &&
-               (relativeAngleDegrees <= ANGLE_TURN_HALF_MAX_DEGREES)) {
-        turnLeft = false;
     }
 
     if (cruiseRpm <= 0) {
@@ -167,7 +85,6 @@ bool AngleTurnControl_start(AngleTurnControl *control, bool turnLeft,
 AngleTurnControl_Result AngleTurnControl_update(AngleTurnControl *control)
 {
     float remaining;
-    float rateAbs;
     float wrongWayLimit;
 
     if (!control->active) {
@@ -184,7 +101,6 @@ AngleTurnControl_Result AngleTurnControl_update(AngleTurnControl *control)
     }
 
     remaining = AngleTurnControl_getRemainingDegrees(control);
-    rateAbs = AngleTurnControl_abs(AngleTurnControl_getSignedRate(control));
     wrongWayLimit = control->targetAbsDegrees + 25.0f;
 
     if (remaining > wrongWayLimit) {
@@ -195,61 +111,15 @@ AngleTurnControl_Result AngleTurnControl_update(AngleTurnControl *control)
         return ANGLE_TURN_RESULT_FAULT;
     }
 
-    /* Reached or slightly overshot: coast briefly, then DONE. */
+    /* 到达容差或已经过冲时立即关闭驱动，不再滑行等待或低速补角。 */
     if (remaining <= control->config.angleToleranceDegrees) {
-        if (!control->coasting) {
-            AngleTurnControl_enterCoast(control);
-            control->settledCount = 1U;
-            return ANGLE_TURN_RESULT_NONE;
-        }
         CarControl_coast(control->config.car);
-        control->settledCount++;
-        if (control->settledCount >= control->config.settleSamples) {
-            control->active = false;
-            control->coasting = false;
-            control->creeping = false;
-            return ANGLE_TURN_RESULT_COMPLETED;
-        }
-        return ANGLE_TURN_RESULT_NONE;
-    }
-
-    if (control->creeping) {
-        float creepStopDistance = control->config.angleToleranceDegrees +
-            (0.04f * AngleTurnControl_getApproachRateDps(control));
-
-        AngleTurnControl_commandPivot(control, control->config.creepRpm);
-        /*
-         * During creep, do not reuse the large cruise coast distance; that
-         * left a repeatable ~2 deg shortfall. Stop only when nearly there.
-         */
-        if (remaining <= creepStopDistance) {
-            AngleTurnControl_enterCoast(control);
-        }
-        return ANGLE_TURN_RESULT_NONE;
-    }
-
-    if (control->coasting) {
-        CarControl_coast(control->config.car);
-        control->coastSamples++;
-
-        /*
-         * Keep coasting while inertia is still closing the gap.
-         * If almost stopped and still short, finish with a slow creep.
-         */
-        if ((rateAbs <= control->config.stoppedRateToleranceDps) &&
-            (control->coastSamples >= 10U)) {
-            AngleTurnControl_enterCreep(control);
-            return ANGLE_TURN_RESULT_NONE;
-        }
-        if (control->coastSamples >= 150U) {
-            AngleTurnControl_enterCreep(control);
-        }
-        return ANGLE_TURN_RESULT_NONE;
-    }
-
-    if (remaining <= AngleTurnControl_getCoastDistanceDegrees(control)) {
-        AngleTurnControl_enterCoast(control);
-        return ANGLE_TURN_RESULT_NONE;
+        control->active = false;
+        control->coasting = false;
+        control->creeping = false;
+        control->settledCount = 0U;
+        control->coastSamples = 0U;
+        return ANGLE_TURN_RESULT_COMPLETED;
     }
 
     AngleTurnControl_commandPivot(control, control->cruiseRpm);
