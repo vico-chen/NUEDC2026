@@ -70,6 +70,7 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
     int32_t measuredCountsPerSample, int16_t targetRpm)
 {
     int8_t requestedDirection;
+    int16_t signedOutputPercent;
     uint16_t targetMagnitudeRpm;
     int32_t measuredMagnitude;
     float targetCountsPerSample;
@@ -154,17 +155,33 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
                 (2.0f * motor->pidLastError));
     motor->pidOutput += increment;
 
+    /*
+     * 非零目标转速下也允许有限反向输出。
+     * 例如转弯内侧轮目标只有 10 RPM、但被车体拖到 90 RPM 时，
+     * PID 可以反向制动，而不是把 PWM 降到 0 后任其继续滑行。
+     * 反向制动力沿用零速制动上限，避免突然满功率反转。
+     */
     if (motor->pidOutput > motor->config.outputMaxPercent) {
         motor->pidOutput = motor->config.outputMaxPercent;
-    } else if (motor->pidOutput < 0.0f) {
-        motor->pidOutput = 0.0f;
+    } else if (motor->pidOutput <
+        -motor->config.zeroSpeedBrakeMaxPercent) {
+        motor->pidOutput =
+            -motor->config.zeroSpeedBrakeMaxPercent;
     }
 
     motor->pidPreviousError = motor->pidLastError;
     motor->pidLastError = error;
 
-    return (int16_t) (requestedDirection *
-        (int16_t) (motor->pidOutput + 0.5f));
+    /* 正负输出分别四舍五入，保留负号表示与目标方向相反的制动力。 */
+    if (motor->pidOutput >= 0.0f) {
+        signedOutputPercent =
+            (int16_t) (motor->pidOutput + 0.5f);
+    } else {
+        signedOutputPercent =
+            (int16_t) (motor->pidOutput - 0.5f);
+    }
+
+    return (int16_t) (requestedDirection * signedOutputPercent);
 }
 
 void MotorControl_init(

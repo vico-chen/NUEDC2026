@@ -23,8 +23,10 @@ typedef struct {
     bool enabled;
     bool debugEnabled;
     bool filterReady;
+    bool errorFilterReady;
     int16_t baseSpeedRpm;
     float integral;
+    float filteredError;
     int16_t lastError;
     uint8_t debugDivider;
     uint8_t filteredValues[GRAYSCALE_SENSOR_CHANNELS];

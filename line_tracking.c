@@ -4,7 +4,7 @@
 #define LINE_TRACKING_ACTIVE_LEVEL (1U)
 
 /* 巡线 PID 参数。 */
-#define LINE_PID_KP (4.0f)
+#define LINE_PID_KP (3.0f)
 #define LINE_PID_KI (0.01f)
 #define LINE_PID_KD (0.0f)
 #define LINE_PID_INTEGRAL_LIMIT (2000.0f)
@@ -13,6 +13,8 @@
 #define LINE_ERR_ABS_FALLBACK (30)
 #define LINE_DEBUG_PRINT_PERIOD_SAMPLES (10U)
 #define LINE_SENSOR_DEBOUNCE_SAMPLES (2U)
+/* 一阶低通滤波：每次采用 30% 新误差，保留 70% 历史误差。 */
+#define LINE_ERROR_FILTER_ALPHA (1.00f)
 
 /* 清除 PID、传感器滤波状态和丢线方向记忆。 */
 void LineTracking_reset(LineTracking *tracking)
@@ -20,9 +22,11 @@ void LineTracking_reset(LineTracking *tracking)
     uint8_t i;
 
     tracking->integral = 0.0f;
+    tracking->filteredError = 0.0f;
     tracking->lastError = 0;
     tracking->debugDivider = 0U;
     tracking->filterReady = false;
+    tracking->errorFilterReady = false;
 
     for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
         tracking->filteredValues[i] = 0U;
@@ -117,6 +121,8 @@ static int16_t LineTracking_computeError(LineTracking *tracking,
     };
     int32_t weightedSum = 0;
     uint8_t activeCount = 0U;
+    uint8_t outerActive = 0U;
+    uint8_t centerActive = 0U;
     uint8_t i;
     int16_t error;
 
@@ -124,7 +130,20 @@ static int16_t LineTracking_computeError(LineTracking *tracking,
         if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
             weightedSum += (int32_t) weights[i];
             activeCount++;
+            if ((i == 3U) || (i == 4U)) {
+                centerActive++;
+            } else {
+                outerActive++;
+            }
         }
+    }
+
+    /*
+     * 恢复红外改造前的八路逻辑：只有中央 X4/X5 压线时，
+     * 直接认为车辆已经居中，避免中央两路边缘抖动造成左右摆动。
+     */
+    if ((centerActive > 0U) && (outerActive == 0U)) {
+        return 0;
     }
 
     if (activeCount > 0U) {
@@ -197,6 +216,7 @@ void LineTracking_update(LineTracking *tracking)
     uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
     uint8_t activeCount = 0U;
     uint8_t i;
+    int16_t rawError;
     int16_t error;
     float derivative;
     float pid;
@@ -215,8 +235,28 @@ void LineTracking_update(LineTracking *tracking)
         }
     }
 
-    error = LineTracking_computeError(tracking, values);
-    if ((activeCount == 0U) || (error == 0)) {
+    rawError = LineTracking_computeError(tracking, values);
+
+    /*
+     * 对离散灰度通道产生的阶跃误差做一阶低通滤波。
+     * 首次采样直接采用当前误差，保证车辆启动时仍能及时响应弯道。
+     */
+    if (!tracking->errorFilterReady) {
+        tracking->filteredError = (float) rawError;
+        tracking->errorFilterReady = true;
+    } else {
+        tracking->filteredError += LINE_ERROR_FILTER_ALPHA *
+            ((float) rawError - tracking->filteredError);
+    }
+
+    /* 将滤波后的浮点误差对称地四舍五入，供现有整数 PID 使用。 */
+    if (tracking->filteredError >= 0.0f) {
+        error = (int16_t) (tracking->filteredError + 0.5f);
+    } else {
+        error = (int16_t) (tracking->filteredError - 0.5f);
+    }
+
+    if ((activeCount == 0U) || (rawError == 0)) {
         tracking->integral = 0.0f;
     } else {
         tracking->integral += (float) error;
