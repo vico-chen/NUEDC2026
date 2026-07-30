@@ -24,11 +24,17 @@ typedef struct {
     uint8_t reportSamples;
     int16_t maxTargetRpm;
     int32_t zeroSpeedDeadbandCounts;
+    /*
+     * IIR coefficient for the 10 ms encoder measurement.
+     * 0 < alpha <= 1; a smaller value improves sub-count low-speed control.
+     */
+    float speedFilterAlpha;
     float kp;
     float ki;
     float kd;
     float outputMaxPercent;
-    float zeroSpeedBrakeMaxPercent;
+    /* Maximum counter-torque while braking an overspeed wheel. */
+    float brakeMaxPercent;
 } MotorControl_Config;
 
 typedef struct {
@@ -48,11 +54,12 @@ typedef struct {
     volatile int32_t reportCounts;
     volatile uint8_t reportDivider;
     volatile bool statusReady;
+    float filteredSpeedCountsPerSample;
+    bool speedFilterReady;
     float pidOutput;
     float pidLastError;
     float pidPreviousError;
     int8_t pidDirection;
-    int8_t zeroBrakeDirection;
     /* Written by the foreground command handler and read by the 10 ms ISR. */
     volatile bool coastMode;
 } MotorControl;

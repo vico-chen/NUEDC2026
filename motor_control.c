@@ -15,6 +15,17 @@ static void MotorControl_resetPid(MotorControl *motor)
     motor->pidPreviousError = 0.0f;
 }
 
+static float MotorControl_absFloat(float value)
+{
+    return (value < 0.0f) ? -value : value;
+}
+
+static int16_t MotorControl_roundOutput(float output)
+{
+    return (output >= 0.0f) ? (int16_t) (output + 0.5f)
+                            : (int16_t) (output - 0.5f);
+}
+
 static void MotorControl_applyOutput(
     MotorControl *motor, int16_t pwmPercent)
 {
@@ -63,104 +74,81 @@ static void MotorControl_applyOutput(
 }
 
 static int16_t MotorControl_updatePid(MotorControl *motor,
-    int32_t measuredCountsPerSample, int16_t targetRpm)
+    float measuredCountsPerSample, int16_t targetRpm)
 {
-    int8_t requestedDirection;
-    uint16_t targetMagnitudeRpm;
-    int32_t measuredMagnitude;
+    int8_t requestedDirection = 0;
     float targetCountsPerSample;
-    float measuredCounts;
     float error;
     float increment;
+    float outputMinimum;
+    float outputMaximum;
 
-    if (targetRpm == 0) {
-        if (motor->coastMode) {
-            MotorControl_resetPid(motor);
-            motor->zeroBrakeDirection = 0;
-            motor->pidDirection = 0;
-            return 0;
-        }
-
-        if (motor->pidDirection != 0) {
-            motor->zeroBrakeDirection = -motor->pidDirection;
-            motor->pidDirection = 0;
-            MotorControl_resetPid(motor);
-        }
-
-        measuredMagnitude = (measuredCountsPerSample < 0) ?
-            -measuredCountsPerSample : measuredCountsPerSample;
-
-        if ((measuredMagnitude <=
-                motor->config.zeroSpeedDeadbandCounts) ||
-            (motor->zeroBrakeDirection == 0)) {
-            MotorControl_resetPid(motor);
-            motor->zeroBrakeDirection = 0;
-            return 0;
-        }
-
-        error = -(float) measuredMagnitude;
-        increment =
-            motor->config.kp * (error - motor->pidLastError) +
-            motor->config.ki * error +
-            motor->config.kd *
-                (error + motor->pidPreviousError -
-                    (2.0f * motor->pidLastError));
-        motor->pidOutput += increment;
-
-        if (motor->pidOutput <
-            -motor->config.zeroSpeedBrakeMaxPercent) {
-            motor->pidOutput =
-                -motor->config.zeroSpeedBrakeMaxPercent;
-        } else if (motor->pidOutput > 0.0f) {
-            motor->pidOutput = 0.0f;
-        }
-
-        motor->pidPreviousError = motor->pidLastError;
-        motor->pidLastError = error;
-
-        return (int16_t) (motor->zeroBrakeDirection *
-            (int16_t) ((-motor->pidOutput) + 0.5f));
+    if (motor->coastMode) {
+        MotorControl_resetPid(motor);
+        motor->pidDirection = 0;
+        return 0;
     }
 
-    requestedDirection = (targetRpm > 0) ? 1 : -1;
-    targetMagnitudeRpm = (targetRpm > 0) ?
-        (uint16_t) targetRpm : (uint16_t) (-targetRpm);
-
-    if (requestedDirection != motor->pidDirection) {
+    if (targetRpm != 0) {
+        requestedDirection = (targetRpm > 0) ? 1 : -1;
+        if (requestedDirection != motor->pidDirection) {
+            MotorControl_resetPid(motor);
+            motor->pidDirection = requestedDirection;
+        }
+    } else if (MotorControl_absFloat(measuredCountsPerSample) <=
+               (float) motor->config.zeroSpeedDeadbandCounts) {
+        /*
+         * Stop braking once the wheel is inside the encoder deadband.
+         * This prevents a residual integral term from reversing a stopped
+         * wheel.
+         */
         MotorControl_resetPid(motor);
-        motor->pidDirection = requestedDirection;
-        motor->zeroBrakeDirection = 0;
+        motor->pidDirection = 0;
+        return 0;
     }
 
     targetCountsPerSample =
-        ((float) targetMagnitudeRpm *
+        ((float) targetRpm *
             (float) MotorControl_getCountsPerOutputRevolution(motor)) /
         (60.0f * (float) motor->config.sampleRateHz);
-
-    measuredCounts = (measuredCountsPerSample < 0) ?
-        (float) (-measuredCountsPerSample) :
-        (float) measuredCountsPerSample;
-    error = targetCountsPerSample - measuredCounts;
+    error = targetCountsPerSample - measuredCountsPerSample;
 
     increment =
         motor->config.kp * (error - motor->pidLastError) +
         motor->config.ki * error +
         motor->config.kd *
             (error + motor->pidPreviousError -
-                (2.0f * motor->pidLastError));
+                    (2.0f * motor->pidLastError));
     motor->pidOutput += increment;
 
-    if (motor->pidOutput > motor->config.outputMaxPercent) {
-        motor->pidOutput = motor->config.outputMaxPercent;
-    } else if (motor->pidOutput < 0.0f) {
-        motor->pidOutput = 0.0f;
+    /*
+     * Use signed control effort.  If a wheel is mechanically back-driven
+     * above its target (common for the inner wheels of a tight arc), the
+     * controller may briefly command the opposite bridge direction to
+     * generate braking torque.  Limit that counter-torque independently so
+     * it cannot become an uncontrolled reversal.
+     */
+    if (targetRpm > 0) {
+        outputMinimum = -motor->config.brakeMaxPercent;
+        outputMaximum = motor->config.outputMaxPercent;
+    } else if (targetRpm < 0) {
+        outputMinimum = -motor->config.outputMaxPercent;
+        outputMaximum = motor->config.brakeMaxPercent;
+    } else {
+        outputMinimum = -motor->config.brakeMaxPercent;
+        outputMaximum = motor->config.brakeMaxPercent;
+    }
+
+    if (motor->pidOutput > outputMaximum) {
+        motor->pidOutput = outputMaximum;
+    } else if (motor->pidOutput < outputMinimum) {
+        motor->pidOutput = outputMinimum;
     }
 
     motor->pidPreviousError = motor->pidLastError;
     motor->pidLastError = error;
 
-    return (int16_t) (requestedDirection *
-        (int16_t) (motor->pidOutput + 0.5f));
+    return MotorControl_roundOutput(motor->pidOutput);
 }
 
 void MotorControl_init(
@@ -187,7 +175,6 @@ void MotorControl_coast(MotorControl *motor)
 {
     motor->targetRpm = 0;
     motor->coastMode = true;
-    motor->zeroBrakeDirection = 0;
     motor->pidDirection = 0;
     MotorControl_resetPid(motor);
     MotorControl_applyOutput(motor, 0);
@@ -209,10 +196,26 @@ void MotorControl_handleEncoderEdge(MotorControl *motor)
 
 void MotorControl_update(MotorControl *motor)
 {
+    float alpha = motor->config.speedFilterAlpha;
+
     motor->speedCountsPerSample = motor->encoderCount;
     motor->encoderCount = 0;
+
+    if ((alpha <= 0.0f) || (alpha > 1.0f)) {
+        alpha = 1.0f;
+    }
+    if (!motor->speedFilterReady) {
+        motor->filteredSpeedCountsPerSample =
+            (float) motor->speedCountsPerSample;
+        motor->speedFilterReady = true;
+    } else {
+        motor->filteredSpeedCountsPerSample += alpha *
+            ((float) motor->speedCountsPerSample -
+                motor->filteredSpeedCountsPerSample);
+    }
+
     motor->pwmPercent = MotorControl_updatePid(
-        motor, motor->speedCountsPerSample, motor->targetRpm);
+        motor, motor->filteredSpeedCountsPerSample, motor->targetRpm);
     MotorControl_applyOutput(motor, motor->pwmPercent);
 
     motor->reportCountAccumulator += motor->speedCountsPerSample;

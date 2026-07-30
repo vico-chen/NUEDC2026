@@ -31,6 +31,7 @@
  */
 
 #include "ti_msp_dl_config.h"
+#include "board_pins.h"
 #include "motor_control.h"
 #include "car_control.h"
 #include "mpu6050_angle.h"
@@ -76,16 +77,16 @@
 
 static MotorControl gMotorA;
 static const MotorControl_Config gMotorAConfig = {
-    .pwmInstance = PWM_MOTOR_AB_INST,
-    .pwmChannel = DL_TIMER_CC_0_INDEX,
-    .directionIn1Port = GPIO_MOTOR_A_PORT,
-    .directionIn2Port = GPIO_MOTOR_A_PORT,
-    .directionIn1Pin = GPIO_MOTOR_A_AIN_1_PIN,
-    .directionIn2Pin = GPIO_MOTOR_A_AIN_2_PIN,
-    .encoderPhaseAPort = GPIO_MOTOR_A_PORT,
-    .encoderPhaseBPort = GPIO_MOTOR_A_PORT,
-    .encoderPhaseAPin = GPIO_MOTOR_A_EA_1_PIN,
-    .encoderPhaseBPin = GPIO_MOTOR_A_EB_1_PIN,
+    .pwmInstance = BOARD_MOTOR_A_PWM_INSTANCE,
+    .pwmChannel = BOARD_MOTOR_A_PWM_CHANNEL,
+    .directionIn1Port = BOARD_MOTOR_A_DIR1_PORT,
+    .directionIn2Port = BOARD_MOTOR_A_DIR2_PORT,
+    .directionIn1Pin = BOARD_MOTOR_A_DIR1_PIN,
+    .directionIn2Pin = BOARD_MOTOR_A_DIR2_PIN,
+    .encoderPhaseAPort = BOARD_MOTOR_A_ENCODER_A_PORT,
+    .encoderPhaseBPort = BOARD_MOTOR_A_ENCODER_B_PORT,
+    .encoderPhaseAPin = BOARD_MOTOR_A_ENCODER_A_PIN,
+    .encoderPhaseBPin = BOARD_MOTOR_A_ENCODER_B_PIN,
     .pwmPeriodCounts = 100U,
     .encoderPpr = 13U,
     .gearRatio = 20U,
@@ -94,25 +95,26 @@ static const MotorControl_Config gMotorAConfig = {
     .reportSamples = 10U,
     .maxTargetRpm = (int16_t) MOTOR_MAX_TARGET_RPM,
     .zeroSpeedDeadbandCounts = 1,
+    .speedFilterAlpha = 0.35f,
     .kp = 5.0f,
     .ki = 1.0f,
     .kd = 0.2f,
     .outputMaxPercent = 99.0f,
-    .zeroSpeedBrakeMaxPercent = 40.0f,
+    .brakeMaxPercent = 25.0f,
 };
 
 static MotorControl gMotorB;
 static const MotorControl_Config gMotorBConfig = {
-    .pwmInstance = PWM_MOTOR_AB_INST,
-    .pwmChannel = DL_TIMER_CC_1_INDEX,
-    .directionIn1Port = GPIO_MOTOR_B_PORT,
-    .directionIn2Port = GPIO_MOTOR_B_PORT,
-    .directionIn1Pin = GPIO_MOTOR_B_BIN_1_PIN,
-    .directionIn2Pin = GPIO_MOTOR_B_BIN_2_PIN,
-    .encoderPhaseAPort = GPIO_MOTOR_B_PORT,
-    .encoderPhaseBPort = GPIO_MOTOR_B_PORT,
-    .encoderPhaseAPin = GPIO_MOTOR_B_EA_2_PIN,
-    .encoderPhaseBPin = GPIO_MOTOR_B_EB_2_PIN,
+    .pwmInstance = BOARD_MOTOR_B_PWM_INSTANCE,
+    .pwmChannel = BOARD_MOTOR_B_PWM_CHANNEL,
+    .directionIn1Port = BOARD_MOTOR_B_DIR1_PORT,
+    .directionIn2Port = BOARD_MOTOR_B_DIR2_PORT,
+    .directionIn1Pin = BOARD_MOTOR_B_DIR1_PIN,
+    .directionIn2Pin = BOARD_MOTOR_B_DIR2_PIN,
+    .encoderPhaseAPort = BOARD_MOTOR_B_ENCODER_A_PORT,
+    .encoderPhaseBPort = BOARD_MOTOR_B_ENCODER_B_PORT,
+    .encoderPhaseAPin = BOARD_MOTOR_B_ENCODER_A_PIN,
+    .encoderPhaseBPin = BOARD_MOTOR_B_ENCODER_B_PIN,
     .pwmPeriodCounts = 100U,
     .encoderPpr = 13U,
     .gearRatio = 20U,
@@ -121,25 +123,26 @@ static const MotorControl_Config gMotorBConfig = {
     .reportSamples = 10U,
     .maxTargetRpm = (int16_t) MOTOR_MAX_TARGET_RPM,
     .zeroSpeedDeadbandCounts = 1,
+    .speedFilterAlpha = 0.35f,
     .kp = 5.0f,
     .ki = 1.0f,
     .kd = 0.2f,
     .outputMaxPercent = 99.0f,
-    .zeroSpeedBrakeMaxPercent = 40.0f,
+    .brakeMaxPercent = 25.0f,
 };
 
 static MotorControl gMotorC;
 static const MotorControl_Config gMotorCConfig = {
-    .pwmInstance = PWM_MOTOR_CD_INST,
-    .pwmChannel = DL_TIMER_CC_0_INDEX,
-    .directionIn1Port = GPIO_MOTOR_C_CIN_1_PORT,
-    .directionIn2Port = GPIO_MOTOR_C_CIN_2_PORT,
-    .directionIn1Pin = GPIO_MOTOR_C_CIN_1_PIN,
-    .directionIn2Pin = GPIO_MOTOR_C_CIN_2_PIN,
-    .encoderPhaseAPort = GPIO_MOTOR_C_EA_3_PORT,
-    .encoderPhaseBPort = GPIO_MOTOR_C_EB_3_PORT,
-    .encoderPhaseAPin = GPIO_MOTOR_C_EA_3_PIN,
-    .encoderPhaseBPin = GPIO_MOTOR_C_EB_3_PIN,
+    .pwmInstance = BOARD_MOTOR_C_PWM_INSTANCE,
+    .pwmChannel = BOARD_MOTOR_C_PWM_CHANNEL,
+    .directionIn1Port = BOARD_MOTOR_C_DIR1_PORT,
+    .directionIn2Port = BOARD_MOTOR_C_DIR2_PORT,
+    .directionIn1Pin = BOARD_MOTOR_C_DIR1_PIN,
+    .directionIn2Pin = BOARD_MOTOR_C_DIR2_PIN,
+    .encoderPhaseAPort = BOARD_MOTOR_C_ENCODER_A_PORT,
+    .encoderPhaseBPort = BOARD_MOTOR_C_ENCODER_B_PORT,
+    .encoderPhaseAPin = BOARD_MOTOR_C_ENCODER_A_PIN,
+    .encoderPhaseBPin = BOARD_MOTOR_C_ENCODER_B_PIN,
     .pwmPeriodCounts = 100U,
     .encoderPpr = 13U,
     .gearRatio = 20U,
@@ -148,25 +151,26 @@ static const MotorControl_Config gMotorCConfig = {
     .reportSamples = 10U,
     .maxTargetRpm = (int16_t) MOTOR_MAX_TARGET_RPM,
     .zeroSpeedDeadbandCounts = 1,
+    .speedFilterAlpha = 0.35f,
     .kp = 5.0f,
     .ki = 1.0f,
     .kd = 0.2f,
     .outputMaxPercent = 99.0f,
-    .zeroSpeedBrakeMaxPercent = 40.0f,
+    .brakeMaxPercent = 25.0f,
 };
 
 static MotorControl gMotorD;
 static const MotorControl_Config gMotorDConfig = {
-    .pwmInstance = PWM_MOTOR_CD_INST,
-    .pwmChannel = DL_TIMER_CC_1_INDEX,
-    .directionIn1Port = GPIO_MOTOR_D_DIN_1_PORT,
-    .directionIn2Port = GPIO_MOTOR_D_DIN_2_PORT,
-    .directionIn1Pin = GPIO_MOTOR_D_DIN_1_PIN,
-    .directionIn2Pin = GPIO_MOTOR_D_DIN_2_PIN,
-    .encoderPhaseAPort = GPIO_MOTOR_D_EA_4_PORT,
-    .encoderPhaseBPort = GPIO_MOTOR_D_EB_4_PORT,
-    .encoderPhaseAPin = GPIO_MOTOR_D_EA_4_PIN,
-    .encoderPhaseBPin = GPIO_MOTOR_D_EB_4_PIN,
+    .pwmInstance = BOARD_MOTOR_D_PWM_INSTANCE,
+    .pwmChannel = BOARD_MOTOR_D_PWM_CHANNEL,
+    .directionIn1Port = BOARD_MOTOR_D_DIR1_PORT,
+    .directionIn2Port = BOARD_MOTOR_D_DIR2_PORT,
+    .directionIn1Pin = BOARD_MOTOR_D_DIR1_PIN,
+    .directionIn2Pin = BOARD_MOTOR_D_DIR2_PIN,
+    .encoderPhaseAPort = BOARD_MOTOR_D_ENCODER_A_PORT,
+    .encoderPhaseBPort = BOARD_MOTOR_D_ENCODER_B_PORT,
+    .encoderPhaseAPin = BOARD_MOTOR_D_ENCODER_A_PIN,
+    .encoderPhaseBPin = BOARD_MOTOR_D_ENCODER_B_PIN,
     .pwmPeriodCounts = 100U,
     .encoderPpr = 13U,
     .gearRatio = 20U,
@@ -175,11 +179,12 @@ static const MotorControl_Config gMotorDConfig = {
     .reportSamples = 10U,
     .maxTargetRpm = (int16_t) MOTOR_MAX_TARGET_RPM,
     .zeroSpeedDeadbandCounts = 1,
+    .speedFilterAlpha = 0.35f,
     .kp = 5.0f,
     .ki = 1.0f,
     .kd = 0.2f,
     .outputMaxPercent = 99.0f,
-    .zeroSpeedBrakeMaxPercent = 40.0f,
+    .brakeMaxPercent = 25.0f,
 };
 
 static CarControl gCar;
@@ -1355,15 +1360,15 @@ int main(void)
         UART_sendString("MPU6050 init failed.\r\n");
     }
     UART_sendString(
-        "GRAYSCALE OK  AD0=PB11 AD1=PB5 AD2=PA1 OUT=PA14\r\n");
+        "GRAYSCALE OK  AD0=PB27 AD1=PB26 AD2=PB23 OUT=PA12\r\n");
     UART_sendString("Ready. Send H for commands.\r\n");
 
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);
-    NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
-    NVIC_EnableIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
-    NVIC_ClearPendingIRQ(GPIO_MULTIPLE_GPIOA_INT_IRQN);
-    NVIC_EnableIRQ(GPIO_MULTIPLE_GPIOA_INT_IRQN);
+    NVIC_ClearPendingIRQ(BOARD_ENCODER_GPIOB_IRQN);
+    NVIC_EnableIRQ(BOARD_ENCODER_GPIOB_IRQN);
+    NVIC_ClearPendingIRQ(BOARD_ENCODER_GPIOA_IRQN);
+    NVIC_EnableIRQ(BOARD_ENCODER_GPIOA_IRQN);
     NVIC_ClearPendingIRQ(TIMER_PID_INST_INT_IRQN);
     NVIC_EnableIRQ(TIMER_PID_INST_INT_IRQN);
 
@@ -1424,25 +1429,27 @@ int main(void)
 void GROUP1_IRQHandler(void)
 {
     uint32_t gpioBInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
-        GPIOB, GPIO_MOTOR_A_EB_1_PIN | GPIO_MOTOR_B_EB_2_PIN);
+        BOARD_ENCODER_GPIOB_PORT, BOARD_ENCODER_GPIOB_MASK);
     uint32_t gpioAInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
-        GPIOA, GPIO_MOTOR_C_EB_3_PIN | GPIO_MOTOR_D_EB_4_PIN);
+        BOARD_ENCODER_GPIOA_PORT, BOARD_ENCODER_GPIOA_MASK);
 
-    if ((gpioBInterruptStatus & GPIO_MOTOR_A_EB_1_PIN) != 0U) {
+    if ((gpioBInterruptStatus & BOARD_MOTOR_A_ENCODER_B_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorA);
     }
-    if ((gpioBInterruptStatus & GPIO_MOTOR_B_EB_2_PIN) != 0U) {
+    if ((gpioAInterruptStatus & BOARD_MOTOR_B_ENCODER_B_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorB);
     }
-    if ((gpioAInterruptStatus & GPIO_MOTOR_C_EB_3_PIN) != 0U) {
+    if ((gpioBInterruptStatus & BOARD_MOTOR_C_ENCODER_B_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorC);
     }
-    if ((gpioAInterruptStatus & GPIO_MOTOR_D_EB_4_PIN) != 0U) {
+    if ((gpioBInterruptStatus & BOARD_MOTOR_D_ENCODER_B_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorD);
     }
 
-    DL_GPIO_clearInterruptStatus(GPIOB, gpioBInterruptStatus);
-    DL_GPIO_clearInterruptStatus(GPIOA, gpioAInterruptStatus);
+    DL_GPIO_clearInterruptStatus(
+        BOARD_ENCODER_GPIOB_PORT, gpioBInterruptStatus);
+    DL_GPIO_clearInterruptStatus(
+        BOARD_ENCODER_GPIOA_PORT, gpioAInterruptStatus);
 }
 
 void TIMER_PID_INST_IRQHandler(void)

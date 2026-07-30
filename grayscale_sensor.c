@@ -5,7 +5,7 @@
  * and 3-sample majority after the official settle time.
  */
 #include "grayscale_sensor.h"
-#include "ti_msp_dl_config.h"
+#include "board_pins.h"
 
 #ifndef CPUCLK_FREQ
 #define CPUCLK_FREQ (32000000U)
@@ -15,14 +15,14 @@
 #define GRAYSCALE_SETTLE_US (50U)
 #define GRAYSCALE_SAMPLE_GAP_US (5U)
 
-#define SENSOR_AD0_PORT GPIO_GRAYSCALE_AD0_PORT
-#define SENSOR_AD0_PIN GPIO_GRAYSCALE_AD0_PIN
-#define SENSOR_AD1_PORT GPIO_GRAYSCALE_AD1_PORT
-#define SENSOR_AD1_PIN GPIO_GRAYSCALE_AD1_PIN
-#define SENSOR_AD2_PORT GPIO_GRAYSCALE_AD2_PORT
-#define SENSOR_AD2_PIN GPIO_GRAYSCALE_AD2_PIN
-#define SENSOR_OUT_PORT GPIO_GRAYSCALE_OUT_PORT
-#define SENSOR_OUT_PIN GPIO_GRAYSCALE_OUT_PIN
+#define SENSOR_AD0_PORT BOARD_GRAYSCALE_AD0_PORT
+#define SENSOR_AD0_PIN BOARD_GRAYSCALE_AD0_PIN
+#define SENSOR_AD1_PORT BOARD_GRAYSCALE_AD1_PORT
+#define SENSOR_AD1_PIN BOARD_GRAYSCALE_AD1_PIN
+#define SENSOR_AD2_PORT BOARD_GRAYSCALE_AD2_PORT
+#define SENSOR_AD2_PIN BOARD_GRAYSCALE_AD2_PIN
+#define SENSOR_OUT_PORT BOARD_GRAYSCALE_OUT_PORT
+#define SENSOR_OUT_PIN BOARD_GRAYSCALE_OUT_PIN
 
 static void grayscale_delay_us(uint32_t microseconds)
 {
@@ -34,7 +34,7 @@ static void grayscale_delay_us(uint32_t microseconds)
  * Truth table (vendor manual / CD4051):
  *   channel AD2 AD1 AD0 -> X(channel+1)
  * Official write order: AD0, AD1, AD2.
- * AD0/AD1 share GPIOB here, so update them in one clear/set pair to avoid
+ * AD0/AD1 share one GPIO port here, so update them in one clear/set pair to avoid
  * long intermediate mux addresses between bit writes.
  */
 static void grayscale_select_channel(uint8_t channel)
@@ -106,13 +106,17 @@ void Grayscale_Sensor_Init(void)
     /*
      * Re-apply OUT as input with pull-up + hysteresis.
      * Vendor uses floating input; on a running chassis, OUT is quieter with
-     * a weak pull-up and Schmitt trigger.
+     * a weak pull-up and Schmitt trigger.  Explicitly disable the GPIO output
+     * driver first so this remains safe even if OUT was accidentally left as
+     * an output in SysConfig.
      */
-    DL_GPIO_initDigitalInputFeatures(GPIO_GRAYSCALE_OUT_IOMUX,
+    DL_GPIO_disableOutput(SENSOR_OUT_PORT, SENSOR_OUT_PIN);
+    DL_GPIO_initDigitalInputFeatures(BOARD_GRAYSCALE_OUT_IOMUX,
         DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
         DL_GPIO_HYSTERESIS_ENABLE, DL_GPIO_WAKEUP_DISABLE);
 
-    DL_GPIO_clearPins(SENSOR_AD0_PORT, SENSOR_AD0_PIN | SENSOR_AD1_PIN);
+    DL_GPIO_clearPins(SENSOR_AD0_PORT, SENSOR_AD0_PIN);
+    DL_GPIO_clearPins(SENSOR_AD1_PORT, SENSOR_AD1_PIN);
     DL_GPIO_clearPins(SENSOR_AD2_PORT, SENSOR_AD2_PIN);
 }
 

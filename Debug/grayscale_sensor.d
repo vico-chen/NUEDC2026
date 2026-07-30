@@ -1,6 +1,7 @@
 # FIXED
 
 grayscale_sensor.o: ../grayscale_sensor.c ../grayscale_sensor.h \
+ ../board_pins.h \
  ti_msp_dl_config.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h \
@@ -85,6 +86,7 @@ grayscale_sensor.o: ../grayscale_sensor.c ../grayscale_sensor.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h
 ../grayscale_sensor.h:
+../board_pins.h:
 ti_msp_dl_config.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h:

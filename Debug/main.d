@@ -84,7 +84,7 @@ main.o: ../main.c \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
  C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h \
- ../motor_control.h ../car_control.h ../mpu6050_angle.h \
+ ../board_pins.h ../motor_control.h ../car_control.h ../mpu6050_angle.h \
  ../angle_turn_control.h ../grayscale_sensor.h ../oled_test.h
 ti_msp_dl_config.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h:
@@ -169,6 +169,7 @@ C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_vref.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h:
 C:/ti/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h:
+../board_pins.h:
 ../motor_control.h:
 ../car_control.h:
 ../mpu6050_angle.h:
