@@ -34,6 +34,7 @@ typedef struct {
 /* 车辆当前速度和转弯内侧轮比例。 */
 typedef struct {
     CarControl_Config config;
+    CarControl_Motion motion;
     int16_t speedRpm;
     uint8_t turnInnerPercent;
 } CarControl;
@@ -51,5 +52,6 @@ void CarControl_setMotion(CarControl *car, CarControl_Motion motion,
 /* 读取当前车辆级速度和内侧轮比例。 */
 int16_t CarControl_getSpeedRpm(const CarControl *car);
 uint8_t CarControl_getTurnInnerPercent(const CarControl *car);
+CarControl_Motion CarControl_getMotion(const CarControl *car);
 
 #endif

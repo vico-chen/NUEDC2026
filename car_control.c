@@ -19,6 +19,7 @@ void CarControl_init(CarControl *car, const CarControl_Config *config)
 {
     /* 保存配置、载入默认巡航参数，并确保上电时停车。 */
     car->config = *config;
+    car->motion = CAR_CONTROL_FORWARD;
     car->speedRpm = config->defaultSpeedRpm;
     car->turnInnerPercent = config->defaultTurnInnerPercent;
     CarControl_stop(car);
@@ -61,6 +62,7 @@ void CarControl_setMotion(CarControl *car, CarControl_Motion motion,
         turnInnerPercent = 100U;
     }
 
+    car->motion = motion;
     car->speedRpm = speedRpm;
     car->turnInnerPercent = turnInnerPercent;
     innerWheelRpm = (int16_t) (((int32_t) speedRpm *
@@ -115,4 +117,9 @@ int16_t CarControl_getSpeedRpm(const CarControl *car)
 uint8_t CarControl_getTurnInnerPercent(const CarControl *car)
 {
     return car->turnInnerPercent;
+}
+
+CarControl_Motion CarControl_getMotion(const CarControl *car)
+{
+    return car->motion;
 }

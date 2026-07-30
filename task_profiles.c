@@ -10,8 +10,10 @@
  
  // 只有2有停车偏差，所以跑快点然后不用减速
 const LapTask_Profile gLapTask2Profile = {
-    .cruiseRpm = 180,
-    .accelerationSamples = 50U,
+    .cruiseRpm = 150,
+    .straightRpm = 280,
+    .accelerationSamples = 80U,
+    .straightAccelerationSamples = 50U,
     .intersectionActiveThreshold = 4U,
     .intersectionConfirmSamples = 2U,
     .finishAdvanceMm = 100U,
@@ -24,7 +26,9 @@ const LapTask_Profile gLapTask2Profile = {
 
 const LapTask_Profile gLapTask5Profile = {
     .cruiseRpm = 130,
+    .straightRpm = 130,
     .accelerationSamples = 600U,
+    .straightAccelerationSamples = 0U,
     .intersectionActiveThreshold = 4U,
     .intersectionConfirmSamples = 1U,
     .finishAdvanceMm = 100U,
@@ -37,7 +41,9 @@ const LapTask_Profile gLapTask5Profile = {
 
 const LapTask_Profile gLapTask6Profile = {
     .cruiseRpm = 130,
+    .straightRpm = 130,
     .accelerationSamples = 600U,
+    .straightAccelerationSamples = 0U,
     .intersectionActiveThreshold = 4U,
     .intersectionConfirmSamples = 1U,
     .finishAdvanceMm = 100U,
@@ -55,9 +61,9 @@ const LapTask_Profile gLapTask6Profile = {
  * 降至 50 RPM 后，在达到目标距离时进入制动和停稳确认。
  */
 const StraightTask_Profile gStraightTask4Profile = {
-    .targetDistanceMm = 1800U,
+    .targetDistanceMm = 2000U,
     .wheelDiameterMm = 65U,
-    .cruiseRpm = 120,
+    .cruiseRpm = 130,
     .accelerationSamples = 300U,
     .decelerationDistanceMm = 150U,
     .decelerationEndRpm = 5,

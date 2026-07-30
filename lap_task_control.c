@@ -92,8 +92,10 @@ static bool LapTaskControl_carStopped(const LapTaskControl *control)
 /* 按线性斜坡把巡线速度从 0 提升至配置的巡航 RPM。 */
 static void LapTaskControl_applyAcceleration(LapTaskControl *control)
 {
+    int16_t straightRpm;
     int16_t speedRpm;
 
+    /* 首先按原有斜坡从 0 加速到弯道/普通巡线速度。 */
     if (control->accelerationSamples <
         control->profile->accelerationSamples) {
         control->accelerationSamples++;
@@ -107,6 +109,46 @@ static void LapTaskControl_applyAcceleration(LapTaskControl *control)
             control->accelerationSamples) /
             control->profile->accelerationSamples);
     }
+
+    /*
+     * 完成基础加速后，根据上一周期的巡线动作判断是否处于直行。
+     * 直行时逐步提升到 straightRpm；出现转弯修正时逐步退回 cruiseRpm，
+     * 避免数字传感器短暂跳变造成速度目标瞬间切换。
+     */
+    straightRpm = control->profile->straightRpm;
+    if (straightRpm < control->profile->cruiseRpm) {
+        straightRpm = control->profile->cruiseRpm;
+    }
+
+    if (control->accelerationSamples >=
+        control->profile->accelerationSamples) {
+        if (CarControl_getMotion(control->config.car) ==
+            CAR_CONTROL_FORWARD) {
+            if (control->straightAccelerationSamples <
+                control->profile->straightAccelerationSamples) {
+                control->straightAccelerationSamples++;
+            }
+        } else if (control->straightAccelerationSamples > 0U) {
+            control->straightAccelerationSamples--;
+        }
+
+        if (control->profile->straightAccelerationSamples == 0U) {
+            speedRpm =
+                (CarControl_getMotion(control->config.car) ==
+                    CAR_CONTROL_FORWARD) ?
+                straightRpm : control->profile->cruiseRpm;
+        } else {
+            speedRpm = (int16_t) (
+                control->profile->cruiseRpm +
+                (((int32_t) (straightRpm -
+                    control->profile->cruiseRpm) *
+                    control->straightAccelerationSamples) /
+                    control->profile->straightAccelerationSamples));
+        }
+    } else {
+        control->straightAccelerationSamples = 0U;
+    }
+
     LineTracking_setSpeed(control->config.lineTracking, speedRpm);
 }
 
@@ -156,8 +198,12 @@ bool LapTaskControl_start(LapTaskControl *control, uint8_t taskNumber,
     control->state = LAP_TASK_FOLLOW;
     control->intersectionConfirmCount = 0U;
     control->accelerationSamples = 0U;
+    control->straightAccelerationSamples = 0U;
     control->decelerationSamples = 0U;
     control->brakeSamples = 0U;
+    control->finishStartRpm = 0;
+    control->finishMotion = CAR_CONTROL_FORWARD;
+    control->finishInnerPercent = 100U;
     control->finishEncoderCount = 0U;
     /* 根据轮径和编码器规格预先计算终点后继续前进的目标计数。 */
     control->finishTargetEncoderCount =
@@ -180,8 +226,12 @@ void LapTaskControl_reset(LapTaskControl *control)
     control->taskNumber = 0U;
     control->intersectionConfirmCount = 0U;
     control->accelerationSamples = 0U;
+    control->straightAccelerationSamples = 0U;
     control->decelerationSamples = 0U;
     control->brakeSamples = 0U;
+    control->finishStartRpm = 0;
+    control->finishMotion = CAR_CONTROL_FORWARD;
+    control->finishInnerPercent = 100U;
     control->finishEncoderCount = 0U;
     control->finishTargetEncoderCount = 0U;
     LineTracking_setEnabled(control->config.lineTracking, false);
@@ -193,20 +243,54 @@ void LapTaskControl_reset(LapTaskControl *control)
 void LapTaskControl_update(LapTaskControl *control)
 {
     int16_t speedRpm;
+    int16_t decelerationEndRpm;
 
     switch (control->state) {
         /* 阶段1：平滑加速巡线，持续寻找终点十字路口。 */
         case LAP_TASK_FOLLOW:
             LapTaskControl_applyAcceleration(control);
             if (LapTaskControl_detectIntersection(control)) {
+                /*
+                 * 保存识别终点时加速斜坡实际下发的速度。
+                 * 不能改用配置巡航速度，否则尚未加速完成时会先突增速度再减速。
+                 */
+                control->finishStartRpm =
+                    LineTracking_getSpeed(control->config.lineTracking);
+                control->finishMotion =
+                    CarControl_getMotion(control->config.car);
+                control->finishInnerPercent =
+                    CarControl_getTurnInnerPercent(control->config.car);
+
+                /*
+                 * 一圈模组的巡线只应产生前进、前进左转或前进右转。
+                 * 若状态异常则退回等速直行，避免把倒车或原地转向锁到终点阶段。
+                 */
+                if ((control->finishMotion != CAR_CONTROL_FORWARD) &&
+                    (control->finishMotion != CAR_CONTROL_FORWARD_LEFT) &&
+                    (control->finishMotion != CAR_CONTROL_FORWARD_RIGHT)) {
+                    control->finishMotion = CAR_CONTROL_FORWARD;
+                    control->finishInnerPercent = 100U;
+                }
                 control->finishEncoderCount = 0U;
                 control->state = LAP_TASK_FINISH_ADVANCE;
-                LineTracking_setSpeed(control->config.lineTracking,
-                    control->profile->cruiseRpm);
+
+                /*
+                 * 终点十字线会让多个灰度通道同时跳变，不能再交给巡线 PID，
+                 * 否则左右轮可能在经过横线时瞬间切换修正方向并产生抖动。
+                 * 确认终点后立即关闭巡线、清空全部滤波和 PID 历史，
+                 * 再明确下发等速直行，避免沿用上一周期的转弯目标。
+                 */
+                LineTracking_setEnabled(
+                    control->config.lineTracking, false);
+                LineTracking_reset(control->config.lineTracking);
+                CarControl_setMotion(control->config.car,
+                    control->finishMotion, control->finishStartRpm,
+                    control->finishInnerPercent);
                 LapTaskControl_log(control,
                     "LAP FINISH INTERSECTION, ADVANCING\r\n");
+            } else {
+                LineTracking_update(control->config.lineTracking);
             }
-            LineTracking_update(control->config.lineTracking);
             break;
 
         /*
@@ -215,9 +299,9 @@ void LapTaskControl_update(LapTaskControl *control)
          */
         case LAP_TASK_FINISH_ADVANCE:
             LapTaskControl_accumulateEncoderCounts(control);
-            LineTracking_setSpeed(control->config.lineTracking,
-                control->profile->cruiseRpm);
-            LineTracking_update(control->config.lineTracking);
+            CarControl_setMotion(control->config.car,
+                control->finishMotion, control->finishStartRpm,
+                control->finishInnerPercent);
             if (control->finishEncoderCount >=
                 control->finishTargetEncoderCount) {
                 control->decelerationSamples = 0U;
@@ -232,23 +316,34 @@ void LapTaskControl_update(LapTaskControl *control)
          * decelerationEndRpm，避免终点处急停。
          */
         case LAP_TASK_DECELERATE:
+            /*
+             * 结束速度不能高于终点入口速度，避免低速经过终点时，
+             * “减速”阶段反而把车辆重新加速到配置结束速度。
+             */
+            decelerationEndRpm =
+                control->profile->decelerationEndRpm;
+            if (decelerationEndRpm > control->finishStartRpm) {
+                decelerationEndRpm = control->finishStartRpm;
+            }
+
             if (control->decelerationSamples <
                 control->profile->decelerationSamples) {
                 control->decelerationSamples++;
             }
 
             if (control->profile->decelerationSamples == 0U) {
-                speedRpm = control->profile->decelerationEndRpm;
+                speedRpm = decelerationEndRpm;
             } else {
                 speedRpm = (int16_t) (
-                    control->profile->cruiseRpm -
-                    (((int32_t) (control->profile->cruiseRpm -
-                        control->profile->decelerationEndRpm) *
+                    control->finishStartRpm -
+                    (((int32_t) (control->finishStartRpm -
+                        decelerationEndRpm) *
                         control->decelerationSamples) /
                         control->profile->decelerationSamples));
             }
-            LineTracking_setSpeed(control->config.lineTracking, speedRpm);
-            LineTracking_update(control->config.lineTracking);
+            CarControl_setMotion(control->config.car,
+                control->finishMotion, speedRpm,
+                control->finishInnerPercent);
 
             if (control->decelerationSamples >=
                 control->profile->decelerationSamples) {

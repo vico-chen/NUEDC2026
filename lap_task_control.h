@@ -12,8 +12,10 @@
  * 所有 Samples 参数均以 10 ms 状态机调度周期为单位。
  */
 typedef struct {
-    int16_t cruiseRpm;                    /* 正常巡线目标转速 */
+    int16_t cruiseRpm;                    /* 弯道及普通巡线目标转速 */
+    int16_t straightRpm;                  /* 连续直行时使用的较高目标转速 */
     uint16_t accelerationSamples;         /* 从 0 加速至巡航速度的周期数 */
+    uint16_t straightAccelerationSamples; /* 巡航速度与直线速度间过渡的周期数 */
     uint8_t intersectionActiveThreshold;  /* 判定十字路口所需有效通道数 */
     uint8_t intersectionConfirmSamples;   /* 路口连续确认次数 */
     uint16_t finishAdvanceMm;             /* 扫到终点后继续前进的距离 */
@@ -51,8 +53,12 @@ typedef struct {
     uint8_t taskNumber;                       /* 当前任务编号 */
     uint8_t intersectionConfirmCount;         /* 十字路口确认计数 */
     uint16_t accelerationSamples;             /* 已完成的加速周期 */
+    uint16_t straightAccelerationSamples;     /* 已完成的直线提速周期 */
     uint16_t decelerationSamples;             /* 已完成的减速周期 */
     uint16_t brakeSamples;                    /* 已等待的制动周期 */
+    int16_t finishStartRpm;                    /* 识别终点时保存的当前速度指令 */
+    CarControl_Motion finishMotion;            /* 识别终点时锁定的转弯方向 */
+    uint8_t finishInnerPercent;                /* 识别终点时锁定的内轮速度比例 */
     uint32_t finishEncoderCount;              /* 终点后累计的四轮计数 */
     uint32_t finishTargetEncoderCount;        /* 继续前进距离对应的目标计数 */
 } LapTaskControl;
