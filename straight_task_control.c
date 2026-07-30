@@ -102,14 +102,22 @@ bool StraightTaskControl_start(StraightTaskControl *control,
     /* 距离、轮径或速度参数无效时禁止车辆启动。 */
     if ((profile == 0) || (profile->targetDistanceMm == 0U) ||
         (profile->wheelDiameterMm == 0U) ||
-        (profile->cruiseRpm <= 0)) {
+        (profile->cruiseRpm <= 0) ||
+        (profile->decelerationEndRpm < 0) ||
+        (profile->decelerationEndRpm > profile->cruiseRpm) ||
+        (profile->decelerationDistanceMm >
+            profile->targetDistanceMm)) {
         return false;
     }
 
     control->profile = profile;
     control->state = STRAIGHT_TASK_RUNNING;
     control->accelerationSamples = 0U;
+    control->decelerationSamples = 0U;
     control->brakeSamples = 0U;
+    control->commandedRpm = 0;
+    control->decelerationStartRpm = 0;
+    control->decelerationStarted = false;
     control->encoderCount = 0U;
     /* 分别换算总距离和终点减速区间对应的编码器计数。 */
     control->targetEncoderCount =
@@ -121,7 +129,7 @@ bool StraightTaskControl_start(StraightTaskControl *control,
             profile->wheelDiameterMm);
     CarControl_stop(control->config.car);
     StraightTaskControl_log(control,
-        "STRAIGHT TASK STARTED 1500mm\r\n");
+        "STRAIGHT TASK STARTED\r\n");
     return true;
 }
 
@@ -131,7 +139,11 @@ void StraightTaskControl_reset(StraightTaskControl *control)
     control->profile = 0;
     control->state = STRAIGHT_TASK_IDLE;
     control->accelerationSamples = 0U;
+    control->decelerationSamples = 0U;
     control->brakeSamples = 0U;
+    control->commandedRpm = 0;
+    control->decelerationStartRpm = 0;
+    control->decelerationStarted = false;
     control->encoderCount = 0U;
     control->targetEncoderCount = 0U;
     control->decelerationEncoderCount = 0U;
@@ -146,35 +158,76 @@ void StraightTaskControl_update(StraightTaskControl *control)
     switch (control->state) {
         /*
          * 行驶阶段包含三部分：
-         * 起步按时间加速、中段匀速、最后按剩余距离连续减速。
+         * 起步按时间加速、中段匀速、最后按配置时间连续减速。
          */
         case STRAIGHT_TASK_RUNNING:
             StraightTaskControl_accumulateEncoderCounts(control);
+
+            /* 超过名义目标距离时钳位为 0，避免无符号减法下溢。 */
             if (control->encoderCount >= control->targetEncoderCount) {
-                /* 达到 1.5 m 后目标速度归零，进入停稳确认。 */
-                CarControl_stop(control->config.car);
-                control->brakeSamples = 0U;
-                control->state = STRAIGHT_TASK_BRAKE;
-                StraightTaskControl_log(control,
-                    "STRAIGHT DISTANCE REACHED, BRAKING\r\n");
-                break;
+                remainingCounts = 0U;
+            } else {
+                remainingCounts =
+                    control->targetEncoderCount - control->encoderCount;
             }
 
-            remainingCounts =
-                control->targetEncoderCount - control->encoderCount;
-            if ((control->decelerationEncoderCount > 0U) &&
-                (remainingCounts <=
-                    control->decelerationEncoderCount)) {
+            if (remainingCounts <=
+                control->decelerationEncoderCount) {
                 /*
-                 * 已进入终点减速区：剩余距离越小，目标 RPM 越低。
-                 * 到达终点前速度会逐渐接近 decelerationEndRpm。
+                 * 第一次进入减速区时保存当前目标转速。后续每 10 ms
+                 * 按 decelerationSamples 线性降低转速，因此目标速度
+                 * 对时间呈直线变化，而不再随剩余距离计算。
                  */
+                if (!control->decelerationStarted) {
+                    control->decelerationStarted = true;
+                    control->decelerationSamples = 0U;
+                    control->decelerationStartRpm =
+                        control->commandedRpm;
+                    if (control->decelerationStartRpm <
+                        control->profile->decelerationEndRpm) {
+                        control->decelerationStartRpm =
+                            control->profile->decelerationEndRpm;
+                    }
+                }
+
+                /*
+                 * 减速时间为 0 时不执行减速斜坡，进入减速区后立即制动。
+                 */
+                if (control->profile->decelerationSamples == 0U) {
+                    CarControl_stop(control->config.car);
+                    control->commandedRpm = 0;
+                    control->brakeSamples = 0U;
+                    control->state = STRAIGHT_TASK_BRAKE;
+                    StraightTaskControl_log(control,
+                        "STRAIGHT DECELERATION DONE, BRAKING\r\n");
+                    break;
+                }
+
+                if (control->decelerationSamples <
+                    control->profile->decelerationSamples) {
+                    control->decelerationSamples++;
+                }
+
+                /*
+                 * 减速计时一结束就停车，不再等待编码器到达目标距离。
+                 */
+                if (control->decelerationSamples >=
+                    control->profile->decelerationSamples) {
+                    CarControl_stop(control->config.car);
+                    control->commandedRpm = 0;
+                    control->brakeSamples = 0U;
+                    control->state = STRAIGHT_TASK_BRAKE;
+                    StraightTaskControl_log(control,
+                        "STRAIGHT DECELERATION DONE, BRAKING\r\n");
+                    break;
+                }
+
                 speedRpm = (int16_t) (
-                    control->profile->decelerationEndRpm +
-                    (((int32_t) (control->profile->cruiseRpm -
+                    control->decelerationStartRpm -
+                    (((int32_t) (control->decelerationStartRpm -
                         control->profile->decelerationEndRpm) *
-                        remainingCounts) /
-                        control->decelerationEncoderCount));
+                        control->decelerationSamples) /
+                        control->profile->decelerationSamples));
             } else {
                 /* 尚未进入减速区，先完成起步斜坡再保持巡航速度。 */
                 if (control->accelerationSamples <
@@ -190,6 +243,7 @@ void StraightTaskControl_update(StraightTaskControl *control)
                         control->profile->accelerationSamples);
                 }
             }
+            control->commandedRpm = speedRpm;
             CarControl_setMotion(control->config.car,
                 CAR_CONTROL_FORWARD, speedRpm, 100U);
             break;

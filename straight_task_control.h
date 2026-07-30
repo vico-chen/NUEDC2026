@@ -17,6 +17,7 @@ typedef struct {
     int16_t cruiseRpm;                /* 中段匀速行驶速度 */
     uint16_t accelerationSamples;     /* 起步加速周期数 */
     uint16_t decelerationDistanceMm;  /* 距终点多远开始减速 */
+    uint16_t decelerationSamples;     /* 匀减速周期数，1 个周期为 10 ms */
     int16_t decelerationEndRpm;       /* 到达终点前的最低目标速度 */
     uint16_t brakeMinimumSamples;     /* 制动后至少等待的周期数 */
     uint16_t brakeTimeoutSamples;     /* 停车确认超时周期数 */
@@ -32,7 +33,7 @@ typedef struct {
 /* 定距直行任务状态。 */
 typedef enum {
     STRAIGHT_TASK_IDLE,       /* 空闲，等待启动 */
-    STRAIGHT_TASK_RUNNING,    /* 加速、匀速或按剩余距离减速 */
+    STRAIGHT_TASK_RUNNING,    /* 加速、匀速或按配置时间匀减速 */
     STRAIGHT_TASK_BRAKE,      /* 到达目标距离后制动 */
     STRAIGHT_TASK_DONE,       /* 正常完成 */
     STRAIGHT_TASK_FAULT       /* 停车超时 */
@@ -44,9 +45,13 @@ typedef struct {
     const StraightTask_Profile *profile;     /* 当前使用的参数表 */
     StraightTask_State state;                /* 当前状态 */
     uint16_t accelerationSamples;            /* 已完成的加速周期 */
+    uint16_t decelerationSamples;            /* 已完成的减速周期 */
     uint16_t brakeSamples;                   /* 已等待的制动周期 */
+    int16_t commandedRpm;                    /* 当前下发给车辆的目标转速 */
+    int16_t decelerationStartRpm;             /* 进入减速区时的目标转速 */
+    bool decelerationStarted;                /* 是否已经进入匀减速阶段 */
     uint32_t encoderCount;                   /* 当前四轮累计编码器计数 */
-    uint32_t targetEncoderCount;             /* 1.5 m 对应的目标计数 */
+    uint32_t targetEncoderCount;             /* 配置目标距离对应的编码器计数 */
     uint32_t decelerationEncoderCount;       /* 减速距离对应的计数 */
 } StraightTaskControl;
 

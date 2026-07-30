@@ -31,10 +31,10 @@ const LapTask_Profile gLapTask5Profile = {
     .straightAccelerationSamples = 0U,
     .intersectionActiveThreshold = 4U,
     .intersectionConfirmSamples = 1U,
-    .finishAdvanceMm = 100U,
+    .finishAdvanceMm = 50U,
     .wheelDiameterMm = 65U,
     .decelerationEndRpm = 5,
-    .decelerationSamples = 100U,
+    .decelerationSamples = 200U,
     .brakeMinimumSamples = 15U,
     .brakeTimeoutSamples = 100U,
 };
@@ -46,10 +46,10 @@ const LapTask_Profile gLapTask6Profile = {
     .straightAccelerationSamples = 0U,
     .intersectionActiveThreshold = 4U,
     .intersectionConfirmSamples = 1U,
-    .finishAdvanceMm = 100U,
+    .finishAdvanceMm = 50U,
     .wheelDiameterMm = 65U,
     .decelerationEndRpm = 5,
-    .decelerationSamples = 100U,
+    .decelerationSamples = 200U,
     .brakeMinimumSamples = 15U,
     .brakeTimeoutSamples = 100U,
 };
@@ -57,15 +57,14 @@ const LapTask_Profile gLapTask6Profile = {
 /*
  * ======================== Task4 定距直行参数 ========================
  *
- * 目标距离为 1500 mm。最后 300 mm 根据剩余编码器距离连续减速，
- * 降至 50 RPM 后，在达到目标距离时进入制动和停稳确认。
  */
 const StraightTask_Profile gStraightTask4Profile = {
-    .targetDistanceMm = 2000U,
+    .targetDistanceMm = 2100U,
     .wheelDiameterMm = 65U,
-    .cruiseRpm = 130,
+    .cruiseRpm = 160,
     .accelerationSamples = 300U,
-    .decelerationDistanceMm = 150U,
+    .decelerationDistanceMm = 800U,
+    .decelerationSamples = 300U,
     .decelerationEndRpm = 5,
     .brakeMinimumSamples = 15U,
     .brakeTimeoutSamples = 100U,
