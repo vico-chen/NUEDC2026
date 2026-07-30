@@ -4,13 +4,20 @@
 
 #include <stdint.h>
 
-#define OLED_I2C_ADDRESS       (0x3CU) /* 7-bit SSD1306 address */
+/*
+ * SSD1306 OLED 最小化自检驱动。
+ * 该模块只负责初始化屏幕并显示 “Hello World”，用于快速确认 I2C 接线、
+ * 地址和显示屏本体是否正常，不承担完整图形库功能。
+ */
+
+#define OLED_I2C_ADDRESS       (0x3CU) /* SSD1306 的 7 位 I2C 地址 */
 #define OLED_I2C_TIMEOUT_LOOPS (200000U)
 
 static bool OLED_Test_waitIdle(void)
 {
     uint32_t timeout = OLED_I2C_TIMEOUT_LOOPS;
 
+    /* 带超时等待，防止 OLED 未连接时主程序永久阻塞。 */
     while (timeout > 0U) {
         if ((DL_I2C_getControllerStatus(I2C_OLED_INST) &
                 DL_I2C_CONTROLLER_STATUS_IDLE) != 0U) {
@@ -23,6 +30,7 @@ static bool OLED_Test_waitIdle(void)
 
 static bool OLED_Test_writeByte(uint8_t control, uint8_t value)
 {
+    /* SSD1306 每次写入由“控制字节 + 命令/数据字节”组成。 */
     uint8_t packet[2] = {control, value};
     uint32_t timeout = OLED_I2C_TIMEOUT_LOOPS;
 
@@ -40,7 +48,8 @@ static bool OLED_Test_writeByte(uint8_t control, uint8_t value)
 
     DL_I2C_startControllerTransfer(I2C_OLED_INST, OLED_I2C_ADDRESS,
         DL_I2C_CONTROLLER_DIRECTION_TX, sizeof(packet));
-    delay_cycles(100U); /* MSPM0 I2C_ERR_13 workaround */
+    /* 规避 MSPM0 I2C_ERR_13，启动传输后保留必要的硬件建立时间。 */
+    delay_cycles(100U);
 
     while (timeout > 0U) {
         if ((DL_I2C_getRawInterruptStatus(I2C_OLED_INST,
@@ -59,16 +68,19 @@ static bool OLED_Test_writeByte(uint8_t control, uint8_t value)
 
 static bool OLED_Test_command(uint8_t command)
 {
+    /* 控制字节 0x00 表示后续字节是命令。 */
     return OLED_Test_writeByte(0x00U, command);
 }
 
 static bool OLED_Test_data(uint8_t data)
 {
+    /* 控制字节 0x40 表示后续字节是显示数据。 */
     return OLED_Test_writeByte(0x40U, data);
 }
 
 static bool OLED_Test_setPosition(uint8_t column, uint8_t page)
 {
+    /* 页寻址模式：先选页，再分别写入列地址的低 4 位和高 4 位。 */
     return OLED_Test_command((uint8_t) (0xB0U + page)) &&
            OLED_Test_command((uint8_t) (column & 0x0FU)) &&
            OLED_Test_command((uint8_t) (0x10U | (column >> 4)));
@@ -79,6 +91,7 @@ static bool OLED_Test_clear(void)
     uint8_t page;
     uint8_t column;
 
+    /* 128×64 屏幕共 8 页，每页 128 列，全部写 0 即清屏。 */
     for (page = 0U; page < 8U; page++) {
         if (!OLED_Test_setPosition(0U, page)) {
             return false;
@@ -94,6 +107,7 @@ static bool OLED_Test_clear(void)
 
 static const uint8_t *OLED_Test_glyph(char character)
 {
+    /* 仅保存 “Hello World” 所需的 5×7 点阵字模，减小 Flash 占用。 */
     static const uint8_t space[5] = {0x00U, 0x00U, 0x00U, 0x00U, 0x00U};
     static const uint8_t H[5] = {0x7FU, 0x08U, 0x08U, 0x08U, 0x7FU};
     static const uint8_t W[5] = {0x3FU, 0x40U, 0x38U, 0x40U, 0x3FU};
@@ -124,6 +138,7 @@ static bool OLED_Test_writeString(uint8_t column, uint8_t page,
         return false;
     }
 
+    /* 每个字符写 5 列字模，并追加 1 列空白作为字符间距。 */
     while (*text != '\0') {
         const uint8_t *glyph = OLED_Test_glyph(*text);
         for (glyphColumn = 0U; glyphColumn < 5U; glyphColumn++) {
@@ -141,6 +156,7 @@ static bool OLED_Test_writeString(uint8_t column, uint8_t page,
 
 bool OLED_Test_initAndShowHelloWorld(void)
 {
+    /* SSD1306 上电初始化序列：页寻址、扫描方向、对比度和电荷泵等。 */
     static const uint8_t initCommands[] = {
         0xAEU, 0x20U, 0x02U, 0x40U, 0x81U, 0xCFU, 0xA1U, 0xC8U,
         0xA6U, 0xA8U, 0x3FU, 0xD3U, 0x00U, 0xD5U, 0x80U, 0xD9U,
@@ -155,5 +171,6 @@ bool OLED_Test_initAndShowHelloWorld(void)
         }
     }
 
+    /* 清屏后将字符串近似居中显示在第 3 页。 */
     return OLED_Test_clear() && OLED_Test_writeString(31U, 3U, "Hello World");
 }

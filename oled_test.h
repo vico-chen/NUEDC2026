@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-/* Initialize a 128x64 SSD1306 I2C OLED and draw "Hello World". */
+/* 初始化 128×64 SSD1306 I2C OLED，清屏并显示 “Hello World”。 */
 bool OLED_Test_initAndShowHelloWorld(void);
 
 #endif /* OLED_TEST_H */

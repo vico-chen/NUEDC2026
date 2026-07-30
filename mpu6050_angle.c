@@ -1,11 +1,11 @@
 /*
- * MPU6050 relative Z-axis angle driver for LP-MSPM0G3507.
+ * LP-MSPM0G3507 平台的 MPU6050 相对 Z 轴角度驱动。
  *
- * I2C access follows TI's
- * i2c_controller_rw_repeated_start_fifo_interrupts transfer sequence, using
- * polling because each transaction is only one or six bytes. Register setup
- * follows the supplied 51/Arduino examples. The stationary bias calibration
- * and turn-angle integration are adapted for the car application.
+ * I2C 读写遵循 TI 重复起始条件的标准传输时序。单次事务数据量很小，
+ * 因此采用带超时保护的轮询方式，不额外占用中断资源。
+ *
+ * 初始化时对 Z 轴陀螺仪做静止零偏标定；运行时以固定 10 ms 周期读取角速度，
+ * 去除零偏后进行积分，得到小车自复位时刻起的相对转角。
  */
 
 #include "mpu6050_angle.h"
@@ -28,9 +28,10 @@
 #define MPU6050_SAMPLE_PERIOD_SECONDS   (0.010f)
 #define MPU6050_CALIBRATION_SAMPLES     (500U)
 #define MPU6050_I2C_TIMEOUT_LOOPS       (200000U)
-#define MPU6050_POWER_UP_DELAY_CYCLES   (3200000U) /* 100 ms at 32 MHz */
-#define MPU6050_SAMPLE_DELAY_CYCLES     (320000U)  /* 10 ms at 32 MHz */
+#define MPU6050_POWER_UP_DELAY_CYCLES   (3200000U) /* 32 MHz 下延时 100 ms */
+#define MPU6050_SAMPLE_DELAY_CYCLES     (320000U)  /* 32 MHz 下延时 10 ms */
 
+/* 角度模块内部状态：零偏原始值、积分角度、当前角速度和芯片 ID。 */
 static float gGyroZBiasRaw;
 static float gZAngleDegrees;
 static float gZRateDps;
@@ -40,6 +41,7 @@ static bool MPU6050_waitIdle(void)
 {
     uint32_t timeout = MPU6050_I2C_TIMEOUT_LOOPS;
 
+    /* 等待控制器空闲；超时可避免 I2C 总线异常时程序永久卡死。 */
     while (timeout > 0U) {
         if ((DL_I2C_getControllerStatus(I2C_MPU6050_INST) &
                 DL_I2C_CONTROLLER_STATUS_IDLE) != 0U) {
@@ -54,6 +56,7 @@ static bool MPU6050_waitTransferDone(uint32_t doneInterrupt)
 {
     uint32_t timeout = MPU6050_I2C_TIMEOUT_LOOPS;
 
+    /* 同时监视“传输完成”和“控制器错误”两个状态。 */
     while (timeout > 0U) {
         if ((DL_I2C_getRawInterruptStatus(
                  I2C_MPU6050_INST, doneInterrupt) & doneInterrupt) != 0U) {
@@ -70,6 +73,7 @@ static bool MPU6050_waitTransferDone(uint32_t doneInterrupt)
 
 static bool MPU6050_writeRegister(uint8_t registerAddress, uint8_t value)
 {
+    /* MPU6050 单寄存器写入格式：[寄存器地址，数据]。 */
     uint8_t packet[2] = {registerAddress, value};
 
     if (!MPU6050_waitIdle()) {
@@ -86,7 +90,8 @@ static bool MPU6050_writeRegister(uint8_t registerAddress, uint8_t value)
 
     DL_I2C_startControllerTransfer(I2C_MPU6050_INST, MPU6050_I2C_ADDRESS,
         DL_I2C_CONTROLLER_DIRECTION_TX, sizeof(packet));
-    delay_cycles(100U); /* MSPM0 I2C_ERR_13 workaround: >3 I2C clocks. */
+    /* 规避 MSPM0 I2C_ERR_13：启动传输后等待超过 3 个 I2C 时钟。 */
+    delay_cycles(100U);
 
     return MPU6050_waitTransferDone(DL_I2C_INTERRUPT_CONTROLLER_TX_DONE);
 }
@@ -107,6 +112,10 @@ static bool MPU6050_readRegisters(
         I2C_MPU6050_INST, DL_I2C_INTERRUPT_CONTROLLER_TX_DONE);
     DL_I2C_transmitControllerData(I2C_MPU6050_INST, registerAddress);
 
+    /*
+     * 第一阶段只发送寄存器地址，不发送 STOP；第二阶段以重复 START
+     * 切换到接收方向，连续读取 length 字节。
+     */
     DL_I2C_startControllerTransferAdvanced(I2C_MPU6050_INST,
         MPU6050_I2C_ADDRESS, DL_I2C_CONTROLLER_DIRECTION_TX, 1U,
         DL_I2C_CONTROLLER_START_ENABLE, DL_I2C_CONTROLLER_STOP_DISABLE,
@@ -126,6 +135,7 @@ static bool MPU6050_readRegisters(
         DL_I2C_CONTROLLER_ACK_DISABLE);
     delay_cycles(100U);
 
+    /* 持续搬运 RX FIFO 数据，并在总线错误或超时时复位本次传输。 */
     timeout = MPU6050_I2C_TIMEOUT_LOOPS;
     while ((received < length) && (timeout > 0U)) {
         while ((received < length) &&
@@ -156,6 +166,7 @@ static bool MPU6050_readGyroZRaw(int16_t *gyroZRaw)
         return false;
     }
 
+    /* 传感器输出为高字节在前的 16 位有符号二进制补码。 */
     *gyroZRaw = (int16_t) (((uint16_t) data[0] << 8) | data[1]);
     return true;
 }
@@ -171,6 +182,7 @@ bool MPU6050_Angle_init(void)
     gZRateDps = 0.0f;
     gDeviceId = 0U;
 
+    /* 等待传感器上电稳定，并先通过 WHO_AM_I 判断器件是否在线。 */
     delay_cycles(MPU6050_POWER_UP_DELAY_CYCLES);
     if (!MPU6050_readRegisters(MPU6050_REG_WHO_AM_I, &gDeviceId, 1U) ||
         ((gDeviceId != MPU6050_DEVICE_ID_CLASSIC) &&
@@ -178,14 +190,17 @@ bool MPU6050_Angle_init(void)
         return false;
     }
 
+    /* 软件复位，清除传感器之前可能遗留的配置状态。 */
     if (!MPU6050_writeRegister(MPU6050_REG_PWR_MGMT_1, 0x80U)) {
         return false;
     }
     delay_cycles(MPU6050_POWER_UP_DELAY_CYCLES);
 
     /*
-     * Clock = X gyro PLL, sample rate = 1 kHz/(9+1) = 100 Hz,
-     * DLPF_CFG=3 (~44 Hz gyro bandwidth), gyro range = +/-500 dps.
+     * 时钟源选 X 轴陀螺仪 PLL；
+     * 采样率 = 1 kHz / (9 + 1) = 100 Hz；
+     * DLPF_CFG = 3，陀螺仪带宽约 44 Hz；
+     * 量程设为 ±500 °/s，对应 65.5 LSB/(°/s)。
      */
     if (!MPU6050_writeRegister(MPU6050_REG_PWR_MGMT_1, 0x01U) ||
         !MPU6050_writeRegister(MPU6050_REG_SMPLRT_DIV, 9U) ||
@@ -197,7 +212,10 @@ bool MPU6050_Angle_init(void)
 
     delay_cycles(MPU6050_POWER_UP_DELAY_CYCLES);
 
-    /* Keep the car completely still during this approximately 5 s step. */
+    /*
+     * 连续采集 500 个样本求平均值作为 Z 轴零偏。
+     * 该过程约 5 秒，期间必须让小车完全静止，否则会产生固定角速度误差。
+     */
     for (sample = 0U; sample < MPU6050_CALIBRATION_SAMPLES; sample++) {
         if (!MPU6050_readGyroZRaw(&gyroZRaw)) {
             return false;
@@ -219,6 +237,7 @@ bool MPU6050_Angle_update(void)
         return false;
     }
 
+    /* 原始值减去静止零偏后换算成 °/s，再按 10 ms 周期积分。 */
     gZRateDps =
         ((float) gyroZRaw - gGyroZBiasRaw) / MPU6050_GYRO_LSB_PER_DPS;
     gZAngleDegrees += gZRateDps * MPU6050_SAMPLE_PERIOD_SECONDS;
@@ -227,6 +246,7 @@ bool MPU6050_Angle_update(void)
 
 void MPU6050_Angle_reset(void)
 {
+    /* 只清除相对角度，保留上电标定得到的零偏。 */
     gZAngleDegrees = 0.0f;
 }
 

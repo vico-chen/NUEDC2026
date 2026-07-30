@@ -42,33 +42,46 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/*
+ * 主程序总体架构：
+ *   - TIMER_PID：每 10 ms 更新四路电机速度环，并触发一次传感器任务；
+ *   - GPIO GROUP1：接收四路编码器边沿并累加方向计数；
+ *   - UART0：中断中只接收一行命令，具体解析和执行放在主循环；
+ *   - 主循环：更新 MPU6050/定角转向/巡线，处理命令并输出状态。
+ *
+ * 各功能模块不直接依赖 SysConfig 生成的引脚名，硬件映射统一由
+ * board_pins.h 适配，换引脚时优先只修改该文件。
+ */
+
+/* 小车通用限幅、默认速度及周期性输出参数。 */
 #define MOTOR_MAX_TARGET_RPM (1000U)
 #define UART_COMMAND_BUFFER_SIZE (32U)
 #define CAR_DEFAULT_SPEED_RPM (200)
 #define CAR_DEFAULT_TURN_INNER_PERCENT (50U)
 #define ANGLE_TURN_DEFAULT_MAX_RPM (100)
 #define ANGLE_TURN_LEFT_YAW_SIGN (1)
-#define GRAYSCALE_STREAM_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
+#define GRAYSCALE_STREAM_PERIOD_SAMPLES (10U) /* 10 次 × 10 ms = 100 ms */
 
-/* Line tracking config (8-ch digital grayscale, black line => output 1). */
+/* 八路数字灰度巡线参数：黑线对应传感器输出 1。 */
 #define LINE_TRACKING_ACTIVE_LEVEL (1U)
 #define LINE_PID_KP (4.0f)
 #define LINE_PID_KI (0.01f)
 #define LINE_PID_KD (0.0f)
 #define LINE_PID_INTEGRAL_LIMIT (2000.0f)
-#define LINE_PID_DEADBAND_RPM_OFFSET (8) /* within this => straight */
-#define LINE_ERR_DEADBAND (5) /* |err|<=5 treated as centered */
-#define LINE_ERR_ABS_FALLBACK (30) /* when no sensor active */
-#define LINE_DEBUG_PRINT_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
-/* Debounce: require this many equal samples before accepting a bit flip. */
+#define LINE_PID_DEADBAND_RPM_OFFSET (8) /* 转速差在此范围内按直行处理 */
+#define LINE_ERR_DEADBAND (5) /* |误差| <= 5 视为居中 */
+#define LINE_ERR_ABS_FALLBACK (30) /* 丢线时沿最后一次方向继续寻找 */
+#define LINE_DEBUG_PRINT_PERIOD_SAMPLES (10U) /* 10 次 × 10 ms = 100 ms */
+/* 连续出现指定次数的新值后，才确认某路传感器翻转。 */
 #define LINE_SENSOR_DEBOUNCE_SAMPLES (2U)
 
 /*
- * Wheel layout:
- *   C left-front, B right-front
- *   D left-rear,  A right-rear
- * Right-side motors are typically mirrored; flip one sign if a wheel
- * runs opposite to the chassis command.
+ * 从车体上方向下看的车轮布局：
+ *   C 左前轮，B 右前轮
+ *   D 左后轮，A 右后轮
+ *
+ * 左右两侧电机镜像安装，所需电机轴正方向相反。若以后更换接线后某个轮子
+ * 与整车指令方向相反，只需修改对应的 FORWARD_SIGN。
  */
 #define MOTOR_A_FORWARD_SIGN (-1)
 #define MOTOR_B_FORWARD_SIGN (-1)
@@ -76,6 +89,7 @@
 #define MOTOR_D_FORWARD_SIGN (1)
 
 static MotorControl gMotorA;
+/* A 电机：右后轮。四路电机采用相同的编码器和速度环参数。 */
 static const MotorControl_Config gMotorAConfig = {
     .pwmInstance = BOARD_MOTOR_A_PWM_INSTANCE,
     .pwmChannel = BOARD_MOTOR_A_PWM_CHANNEL,
@@ -104,6 +118,7 @@ static const MotorControl_Config gMotorAConfig = {
 };
 
 static MotorControl gMotorB;
+/* B 电机：右前轮。具体外设实例和引脚均来自 board_pins.h。 */
 static const MotorControl_Config gMotorBConfig = {
     .pwmInstance = BOARD_MOTOR_B_PWM_INSTANCE,
     .pwmChannel = BOARD_MOTOR_B_PWM_CHANNEL,
@@ -132,6 +147,7 @@ static const MotorControl_Config gMotorBConfig = {
 };
 
 static MotorControl gMotorC;
+/* C 电机：左前轮。引脚即使跨 GPIO 端口，控制层的配置格式仍保持一致。 */
 static const MotorControl_Config gMotorCConfig = {
     .pwmInstance = BOARD_MOTOR_C_PWM_INSTANCE,
     .pwmChannel = BOARD_MOTOR_C_PWM_CHANNEL,
@@ -160,6 +176,7 @@ static const MotorControl_Config gMotorCConfig = {
 };
 
 static MotorControl gMotorD;
+/* D 电机：左后轮。 */
 static const MotorControl_Config gMotorDConfig = {
     .pwmInstance = BOARD_MOTOR_D_PWM_INSTANCE,
     .pwmChannel = BOARD_MOTOR_D_PWM_CHANNEL,
@@ -188,6 +205,7 @@ static const MotorControl_Config gMotorDConfig = {
 };
 
 static CarControl gCar;
+/* 将四个独立电机映射为车体的前后、左右和弧线运动。 */
 static const CarControl_Config gCarConfig = {
     .rightRearMotor = &gMotorA,
     .rightFrontMotor = &gMotorB,
@@ -203,32 +221,39 @@ static const CarControl_Config gCarConfig = {
 };
 
 static AngleTurnControl gAngleTurn;
+/* 基于 MPU6050 Z 轴相对角度的定角转向状态机参数。 */
 static const AngleTurnControl_Config gAngleTurnConfig = {
     .car = &gCar,
     /*
-     * With the module horizontal and +Z upward, left/CCW yaw is positive.
-     * Change to -1 if a manual left turn makes the reported Y angle decrease.
+     * MPU6050 水平安装且 +Z 朝上时，左转/逆时针角度为正。
+     * 若手动左转时串口报告的角度反而减小，将该符号改为 -1。
      */
     .leftTurnYawSign = ANGLE_TURN_LEFT_YAW_SIGN,
     .defaultCruiseRpm = ANGLE_TURN_DEFAULT_MAX_RPM,
     .creepRpm = 40,
     .brakeRateGain = 0.10f,
     .brakeAheadMaxDegrees = 12.0f,
-    /* Was 2.0 deg and caused a repeatable ~88 deg result on 90 deg commands. */
+    /* 旧值 2.0° 会让 90° 指令稳定停在约 88°，因此收紧到 0.4°。 */
     .angleToleranceDegrees = 0.4f,
     .stoppedRateToleranceDps = 6.0f,
     .settleSamples = 15U,
     .timeoutSamples = 1500U,
 };
 
+/*
+ * 中断与主循环共享的标志必须使用 volatile：
+ * UART ISR 写入命令缓冲区，定时器 ISR 置位 10 ms 采样任务。
+ */
 static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
 static volatile bool gMpu6050SampleDue;
 static bool gMpu6050Ready;
+/* 灰度传感器周期输出开关及分频计数。 */
 static bool gGrayscaleStreamEnabled;
 static uint8_t gGrayscaleStreamDivider;
 
+/* 巡线 PID、输入消抖及调试输出的运行状态。 */
 static bool gLineTrackingEnabled;
 static bool gLineTrackingDebugEnabled;
 static int16_t gLineTrackingBaseSpeedRpm;
@@ -240,11 +265,13 @@ static uint8_t gLinePendingValues[GRAYSCALE_SENSOR_CHANNELS];
 static uint8_t gLinePendingCount[GRAYSCALE_SENSOR_CHANNELS];
 static bool gLineFilterReady;
 
+/* 四路电机状态支持单次报告和连续报告两种模式。 */
 static bool gMotorStatusStreamEnabled;
 static bool gMotorStatusReportOnce;
 
 static void UART_sendString(const char *text)
 {
+    /* 调试输出采用阻塞发送，保证一条文本内部不会丢字符。 */
     while (*text != '\0') {
         DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) *text);
         text++;
@@ -253,11 +280,13 @@ static void UART_sendString(const char *text)
 
 static void UART_sendInt32(int32_t value)
 {
+    /* 不依赖 printf，手工把有符号十进制整数从低位转换并逆序发送。 */
     char digits[10];
     uint8_t count = 0U;
     uint32_t magnitude;
 
     if (value < 0) {
+        /* 该写法也能安全处理 INT32_MIN，避免直接取负溢出。 */
         DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) '-');
         magnitude = (uint32_t) (-(value + 1)) + 1U;
     } else {
@@ -279,6 +308,7 @@ static void UART_sendInt32(int32_t value)
 
 static void UART_sendHex8(uint8_t value)
 {
+    /* 一个字节固定输出两个大写十六进制字符。 */
     static const char hexDigits[] = "0123456789ABCDEF";
 
     DL_UART_Main_transmitDataBlocking(
@@ -289,6 +319,7 @@ static void UART_sendHex8(uint8_t value)
 
 static void UART_printHelp(void)
 {
+    /* 串口命令全集；命令字符串保持英文，便于终端显示和脚本解析。 */
     UART_sendString("\r\n");
     UART_sendString("======== NUEDC2026 UART HELP ========\r\n");
     UART_sendString("115200 8N1, end each cmd with Enter\r\n");
@@ -328,6 +359,7 @@ static void UART_printHelp(void)
 
 static void UART_printBanner(void)
 {
+    /* 上电时只打印常用命令，完整说明通过 H 或 ? 查看。 */
     UART_sendString("\r\n");
     UART_sendString("************************************\r\n");
     UART_sendString("*  NUEDC2026 Car Controller Ready  *\r\n");
@@ -344,12 +376,14 @@ static void UART_printBanner(void)
 
 static void UART_hintHelp(void)
 {
+    /* 所有格式错误共用的简短提示。 */
     UART_sendString("  (Send H for help)\r\n");
 }
 
 static void UART_reportMotorStatus(
     char motorName, const MotorControl_Status *status)
 {
+    /* 输出格式固定，便于保存日志后用脚本解析速度、计数和 PWM。 */
     uint32_t rpmMagnitude;
 
     DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) motorName);
@@ -376,6 +410,10 @@ static void UART_reportMotorStatus(
 
 static void UART_serviceMotorStatus(void)
 {
+    /*
+     * 四路状态并非同一条语句产生，因此先分别缓存；四路都准备好后再整行输出，
+     * 确保同一行 A/B/C/D 属于同一个相邻报告周期。
+     */
     static MotorControl_Status motorAStatus;
     static MotorControl_Status motorBStatus;
     static MotorControl_Status motorCStatus;
@@ -427,6 +465,7 @@ static void UART_serviceMotorStatus(void)
 }
 static void UART_reportZAngle(void)
 {
+    /* 浮点角度放大 10 倍后取整，避免引入完整 printf 浮点库。 */
     float angle = MPU6050_Angle_getZDegrees();
     int32_t angleTimes10;
     uint32_t magnitude;
@@ -455,6 +494,7 @@ static void UART_reportZAngle(void)
 
 static void UART_reportGrayscale(void)
 {
+    /* 按物理丝印 X1～X8 的顺序输出八路数字量。 */
     uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
     uint8_t i;
 
@@ -473,6 +513,7 @@ static void LineTracking_resetPid(void)
 {
     uint8_t i;
 
+    /* 启动/停止巡线时同时清除积分、历史误差和所有消抖记忆。 */
     gLineTrackingIntegral = 0.0f;
     gLineTrackingLastErr = 0;
     gLineTrackingDebugDivider = 0U;
@@ -485,8 +526,8 @@ static void LineTracking_resetPid(void)
 }
 
 /*
- * Debounce digital chatter (especially X4/X5 on the line edge).
- * A channel value only flips after N identical new samples in a row.
+ * 对数字灰度输入做时间消抖，重点抑制黑线边缘处 X4/X5 的来回跳变。
+ * 某路只有连续 N 次读到相同的新值，滤波结果才真正翻转。
  */
 static void LineTracking_filterSensors(
     const uint8_t raw[GRAYSCALE_SENSOR_CHANNELS],
@@ -494,6 +535,7 @@ static void LineTracking_filterSensors(
 {
     uint8_t i;
 
+    /* 第一次采样直接建立初值，避免启动时人为延迟 N 个周期。 */
     if (!gLineFilterReady) {
         for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
             gLineFilteredValues[i] = raw[i];
@@ -507,9 +549,11 @@ static void LineTracking_filterSensors(
 
     for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
         if (raw[i] == gLineFilteredValues[i]) {
+            /* 原始值回到当前稳定值，取消尚未确认的翻转。 */
             gLinePendingValues[i] = raw[i];
             gLinePendingCount[i] = 0U;
         } else if (raw[i] == gLinePendingValues[i]) {
+            /* 新值连续出现，累计到阈值后接受翻转。 */
             if (gLinePendingCount[i] < 255U) {
                 gLinePendingCount[i]++;
             }
@@ -518,6 +562,7 @@ static void LineTracking_filterSensors(
                 gLinePendingCount[i] = 0U;
             }
         } else {
+            /* 出现另一种候选值，重新开始连续计数。 */
             gLinePendingValues[i] = raw[i];
             gLinePendingCount[i] = 1U;
         }
@@ -529,9 +574,9 @@ static int16_t LineTracking_computeErr(
     const uint8_t values[GRAYSCALE_SENSOR_CHANNELS])
 {
     /*
-     * Weights for X1..X8: left negative, right positive.
-     * X4/X5 are the center pair: weight 0 so single-channel flicker
-     * on the line edge does not create ±err and left/right hunting.
+     * X1～X8 的位置权重：左侧为负，右侧为正。
+     * 中间的 X4/X5 权重设为 0，这样线边缘导致的单路闪烁不会反复产生
+     * 正负误差，从而减少小车在中心线附近左右摆动。
      */
     static const int16_t weights[GRAYSCALE_SENSOR_CHANNELS] = {
         -30, -20, -15, 0, 0, 15, 20, 30
@@ -556,12 +601,13 @@ static int16_t LineTracking_computeErr(
         }
     }
 
-    /* Only center sensors on the line => treat as perfectly centered. */
+    /* 只有中心传感器压线时，直接判定小车已经居中。 */
     if ((centerActive > 0U) && (outerActive == 0U)) {
         return 0;
     }
 
     if (activeCount > 0U) {
+        /* 多路同时压线时取权重平均，使误差随黑线位置平滑变化。 */
         err = (int16_t) (weightedSum / (int32_t) activeCount);
         if ((err <= LINE_ERR_DEADBAND) && (err >= -LINE_ERR_DEADBAND)) {
             return 0;
@@ -569,7 +615,7 @@ static int16_t LineTracking_computeErr(
         return err;
     }
 
-    /* Lost line: keep turning toward last known direction. */
+    /* 完全丢线时沿上一次误差方向继续找线，而不是突然直行。 */
     if (gLineTrackingLastErr > 0) {
         return LINE_ERR_ABS_FALLBACK;
     }
@@ -588,11 +634,13 @@ static void LineTracking_applyMotion(int16_t pidRpmOffset)
     uint8_t innerPercent;
     CarControl_Motion motion;
 
+    /* 基础速度无效时保持停车，避免除零。 */
     if (speedRpm <= 0) {
         CarControl_stop(&gCar);
         return;
     }
 
+    /* PID 输出很小时按直行处理，抑制中心附近的频繁转向切换。 */
     if (pidAbs <= LINE_PID_DEADBAND_RPM_OFFSET) {
         motion = CAR_CONTROL_FORWARD;
         CarControl_setMotion(&gCar, motion, speedRpm,
@@ -600,7 +648,7 @@ static void LineTracking_applyMotion(int16_t pidRpmOffset)
         return;
     }
 
-    /* Convert PID output magnitude into inner-wheel speed reduction. */
+    /* PID 绝对值转换为内侧车轮的降速量。 */
     if (pidAbs > speedRpm) {
         pidAbs = speedRpm;
     }
@@ -615,10 +663,10 @@ static void LineTracking_applyMotion(int16_t pidRpmOffset)
         innerPercent = 100U;
     }
     if (innerPercent == 0U) {
-        innerPercent = 1U; /* keep non-zero to avoid deadband sticking */
+        innerPercent = 1U; /* 保持非零，避免落入电机死区后难以重新起转 */
     }
 
-    /* pid sign: negative => line left => turn left */
+    /* PID 为负表示黑线在车体左侧，需要执行左弧线；为正则右转。 */
     motion = (pidRpmOffset < 0) ? CAR_CONTROL_FORWARD_LEFT
                                  : CAR_CONTROL_FORWARD_RIGHT;
     CarControl_setMotion(&gCar, motion, speedRpm, innerPercent);
@@ -635,7 +683,7 @@ static void LineTracking_update(void)
     uint8_t activeCount = 0U;
     uint8_t i;
 
-    /* Read sensors (X1..X8), then debounce chatter. */
+    /* 依次读取 X1～X8，再通过时间消抖得到本周期有效输入。 */
     Grayscale_Sensor_ReadAll(rawValues);
     LineTracking_filterSensors(rawValues, values);
     for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
@@ -646,7 +694,7 @@ static void LineTracking_update(void)
 
     err = LineTracking_computeErr(values);
     if ((activeCount == 0U) || (err == 0)) {
-        /* Prevent windup when centered or line is lost. */
+        /* 居中或丢线时清积分，防止重新见线后积分饱和导致猛转。 */
         gLineTrackingIntegral = 0.0f;
     } else {
         gLineTrackingIntegral += (float) err;
@@ -657,12 +705,13 @@ static void LineTracking_update(void)
         }
     }
 
+    /* 离散 PID：当前每次调用间隔固定为 10 ms，系数已按采样周期整定。 */
     derivative = (float) (err - gLineTrackingLastErr);
     pid = (LINE_PID_KP * (float) err) +
         (LINE_PID_KI * gLineTrackingIntegral) +
         (LINE_PID_KD * derivative);
 
-    /* Clamp pid to keep within speed reduction range. */
+    /* 输出限幅为基础速度，保证计算出的内轮目标转速不会成为负数。 */
     {
         int16_t maxOffset = gLineTrackingBaseSpeedRpm;
         if (maxOffset < 0) {
@@ -679,6 +728,7 @@ static void LineTracking_update(void)
     gLineTrackingLastErr = err;
     LineTracking_applyMotion(pidOffsetRpm);
 
+    /* 调试模式每 100 ms 输出一次误差、PID 结果和滤波后的灰度值。 */
     if (gLineTrackingDebugEnabled) {
         gLineTrackingDebugDivider++;
         if (gLineTrackingDebugDivider >=
@@ -705,6 +755,7 @@ static void LineTracking_update(void)
 static bool Car_parseUnsignedValue(
     uint8_t *index, uint16_t maximum, uint16_t *value)
 {
+    /* 从当前位置解析无符号十进制数，同时在乘 10 前检查上限溢出。 */
     uint16_t parsedValue = 0U;
     bool hasDigit = false;
 
@@ -729,8 +780,8 @@ static bool Car_parseUnsignedValue(
 }
 
 /*
- * Parse optional signed RPM after a motor letter.
- * Empty => 0. Accepts forms like "200", "-150", "+80".
+ * 解析单电机字母后的可选有符号转速。
+ * 参数为空时按 0 rpm 处理，也接受 “200”“-150”“+80” 等格式。
  */
 static bool Car_parseOptionalSignedRpm(
     uint8_t startIndex, int16_t *rpm)
@@ -780,6 +831,7 @@ static void Car_setSingleMotorChassisRpm(
     int8_t forwardSign;
     int16_t motorRpm;
 
+    /* 根据车轮名称找到电机对象及其“车体前进”方向符号。 */
     switch (motorName) {
         case 'A':
             motor = &gMotorA;
@@ -801,6 +853,7 @@ static void Car_setSingleMotorChassisRpm(
             return;
     }
 
+    /* 单电机调试会打断正在运行的定角转向状态机。 */
     AngleTurnControl_cancel(&gAngleTurn);
     motorRpm = (int16_t) (chassisRpm * forwardSign);
     MotorControl_setTargetRpm(motor, motorRpm);
@@ -817,6 +870,7 @@ static void Car_setSingleMotorChassisRpm(
 static bool Car_parseAngleTurnParameters(
     uint8_t startIndex, float *angleDegrees, int16_t *maximumRpm)
 {
+    /* TL/TR 支持 0.1° 分辨率角度，后面的最大转速参数可以省略。 */
     uint8_t index = startIndex;
     uint16_t wholeDegrees;
     uint16_t fractionalTenths = 0U;
@@ -831,6 +885,7 @@ static bool Car_parseAngleTurnParameters(
         return false;
     }
 
+    /* 小数部分只读取一位，避免在嵌入式端引入通用浮点字符串解析。 */
     if (gUartCommand[index] == '.') {
         index++;
         if ((gUartCommand[index] < '0') ||
@@ -857,6 +912,7 @@ static bool Car_parseAngleTurnParameters(
            (gUartCommand[index] == '\t')) {
         index++;
     }
+    /* 未给出 rpm 时使用定角转向专用默认值。 */
     *maximumRpm = ANGLE_TURN_DEFAULT_MAX_RPM;
     if (gUartCommand[index] != '\0') {
         if (!Car_parseUnsignedValue(
@@ -882,6 +938,11 @@ static bool Car_parseCommandParameters(uint8_t startIndex,
     int16_t *speedRpm, bool *speedSpecified,
     uint8_t *turnInnerPercent, bool *turnSpecified)
 {
+    /*
+     * 解析普通运动命令的两个可选参数：
+     *   第一个是外侧轮速度 rpm，第二个是弧线内侧轮速度百分比。
+     * 缺省参数沿用 CarControl 当前保存的设置。
+     */
     uint8_t index = startIndex;
     uint16_t value;
 
@@ -928,6 +989,10 @@ static bool Car_parseCommandParameters(uint8_t startIndex,
 
 static void Car_processUartCommand(void)
 {
+    /*
+     * 命令解析采用“命令字 + 可选参数”的轻量状态机。
+     * ISR 已在行尾补 '\0'，因此此处只处理完整命令，不与接收中断争用缓冲区。
+     */
     uint8_t index = 0U;
     char command;
     char turnCommand = '\0';
@@ -948,6 +1013,7 @@ static void Car_processUartCommand(void)
         UART_sendString("Empty cmd. Send H for help.\r\n");
         return;
     }
+    /* 命令不区分大小写，统一转换为大写后再分派。 */
     if ((command >= 'a') && (command <= 'z')) {
         command = (char) (command - ('a' - 'A'));
     }
@@ -958,7 +1024,7 @@ static void Car_processUartCommand(void)
         return;
     }
 
-    /* Manual motion commands cancel line tracking. */
+    /* 任何手动运动命令都会退出自动巡线，避免两个控制源同时写车轮目标值。 */
     if (gLineTrackingEnabled && (command != 'I') &&
         ((command == 'X') || (command == 'T') ||
          (command == 'F') || (command == 'B') ||
@@ -969,6 +1035,7 @@ static void Car_processUartCommand(void)
         LineTracking_resetPid();
     }
 
+    /* F/B 后的 L/R 表示弧线方向，T 后的 L/R 表示定角转向方向。 */
     if ((command == 'F') || (command == 'B') || (command == 'T')) {
         turnCommand = gUartCommand[index];
         if ((turnCommand >= 'a') && (turnCommand <= 'z')) {
@@ -983,7 +1050,7 @@ static void Car_processUartCommand(void)
 
     if (command == 'X') {
         AngleTurnControl_cancel(&gAngleTurn);
-        /* X is an emergency stop: immediately remove motor drive. */
+        /* X 为急停：立即撤销驱动，不等待速度 PID 缓慢减速。 */
         CarControl_emergencyStop(&gCar);
         gLineTrackingEnabled = false;
         gLineTrackingDebugEnabled = false;
@@ -1001,17 +1068,17 @@ static void Car_processUartCommand(void)
             index++;
         }
 
-        /* Parse I form:
-         *   I      : start with previous speed (debug=0)
-         *   I0     : stop
-         *   I1     : start debug (keep previous speed)
-         *   I<rpm> : start with speed=<rpm> (debug=0)
+        /* 解析 I 命令：
+         *   I      ：沿用上次速度启动巡线，不输出调试信息；
+         *   I0     ：停止巡线；
+         *   I1     ：沿用上次速度启动巡线，并输出调试信息；
+         *   I<rpm> ：以指定速度启动巡线，不输出调试信息。
          *
-         * Important: do not decide by first digit only.
-         * E.g. "I 10" must become speed=10, not debug=1.
+         * 必须解析完整数值后再判断，不能只看首位数字；
+         * 例如 “I 10” 应解释为 10 rpm，而不是调试开关 I1。
          */
         if (gUartCommand[index] == '\0') {
-            /* start with previous speed */
+            /* 无参数：保留上次基础速度。 */
         } else {
             uint8_t indexAfter = index;
             if (!Car_parseUnsignedValue(&indexAfter,
@@ -1042,11 +1109,11 @@ static void Car_processUartCommand(void)
 
             if (newSpeed == 1U) {
                 debug = true;
-                setSpeed = false; /* keep previous speed */
+                setSpeed = false; /* I1 只开调试，保留上次基础速度 */
             } else {
                 setSpeed = true;
             }
-            /* indexAfter unused beyond end-check; setSpeed/base speed below. */
+            /* indexAfter 仅用于格式检查，实际速度在下面统一更新。 */
             (void) indexAfter;
         }
 
@@ -1068,6 +1135,7 @@ static void Car_processUartCommand(void)
         UART_sendString(debug ? " debug=1\r\n" : " debug=0\r\n");
         return;
     }
+    /* TL/TR：启动闭环定角转向，完成、超时或故障结果由主循环报告。 */
     if (command == 'T') {
         if ((turnCommand == '\0') ||
             !Car_parseAngleTurnParameters(
@@ -1093,6 +1161,7 @@ static void Car_processUartCommand(void)
         }
         return;
     }
+    /* Y 读取当前相对航向角；Y0 在非转向状态下清零积分角度。 */
     if (command == 'Y') {
         while ((gUartCommand[index] == ' ') ||
                (gUartCommand[index] == '\t')) {
@@ -1125,6 +1194,7 @@ static void Car_processUartCommand(void)
         }
         return;
     }
+    /* G/G1/G0 分别对应灰度单次读取、周期输出和关闭周期输出。 */
     if (command == 'G') {
         while ((gUartCommand[index] == ' ') ||
                (gUartCommand[index] == '\t')) {
@@ -1169,6 +1239,7 @@ static void Car_processUartCommand(void)
         }
         return;
     }
+    /* M/M1/M0 分别对应电机状态单次读取、周期输出和关闭周期输出。 */
     if (command == 'M') {
         while ((gUartCommand[index] == ' ') ||
                (gUartCommand[index] == '\t')) {
@@ -1215,6 +1286,7 @@ static void Car_processUartCommand(void)
         }
         return;
     }
+    /* WA/WB/WC/WD 用于脱离整车运动分配，单独调试某个电机。 */
     if (command == 'W') {
         char motorName;
         int16_t singleMotorRpm;
@@ -1267,6 +1339,7 @@ static void Car_processUartCommand(void)
         return;
     }
 
+    /* 将普通运动命令转换为 CarControl 的统一运动枚举。 */
     switch (command) {
         case 'F':
             if (turnCommand == 'L') {
@@ -1298,6 +1371,7 @@ static void Car_processUartCommand(void)
             return;
     }
 
+    /* 新的手动运动指令接管四轮目标值，先取消可能仍活动的定角控制。 */
     AngleTurnControl_cancel(&gAngleTurn);
     CarControl_setMotion(&gCar, motion, speedRpm, turnInnerPercent);
 
@@ -1323,15 +1397,16 @@ int main(void)
 {
     bool oledReady;
 
+    /* 先执行 SysConfig 生成的时钟、GPIO、定时器、UART 和 I2C 初始化。 */
     SYSCFG_DL_init();
 
+    /* OLED 自检失败不会阻止小车启动，结果稍后通过串口报告。 */
     oledReady = OLED_Test_initAndShowHelloWorld();
 
     /*
-     * Wheel map: A right-rear, B right-front, C left-front, D left-rear.
-     * Arc command: FL/FR/BL/BR [rpm] [inner wheel percent].
-     * Straight/pivot command: F/B/L/R [rpm], X stops.
-     * Target 0 actively brakes to the deadband, then short-brakes.
+     * 依赖顺序：先初始化四个底层电机，再初始化整车运动和定角转向模块。
+     * 车轮映射为 A 右后、B 右前、C 左前、D 左后。
+     * 电机目标为 0 时先主动反向制动到速度死区，随后进入短刹状态。
      */
     MotorControl_init(&gMotorA, &gMotorAConfig);
     MotorControl_init(&gMotorB, &gMotorBConfig);
@@ -1341,11 +1416,13 @@ int main(void)
     AngleTurnControl_init(&gAngleTurn, &gAngleTurnConfig);
     Grayscale_Sensor_Init();
 
+    /* 巡线默认关闭，但预装一个可直接使用的基础速度。 */
     gLineTrackingEnabled = false;
     gLineTrackingDebugEnabled = false;
     gLineTrackingBaseSpeedRpm = CAR_DEFAULT_SPEED_RPM;
     LineTracking_resetPid();
 
+    /* 输出各外设自检结果；MPU6050 标定期间必须保持车体静止约 5 秒。 */
     UART_printBanner();
     UART_sendString(oledReady ? "OLED: Hello World displayed.\r\n"
                               : "OLED init failed: check I2C address/wiring.\r\n");
@@ -1363,6 +1440,10 @@ int main(void)
         "GRAYSCALE OK  AD0=PB27 AD1=PB26 AD2=PB23 OUT=PA12\r\n");
     UART_sendString("Ready. Send H for commands.\r\n");
 
+    /*
+     * 清除上电阶段可能遗留的挂起标志后，再使能 UART、两组编码器 GPIO
+     * 以及 10 ms PID 定时器中断。
+     */
     NVIC_ClearPendingIRQ(UART_0_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_0_INST_INT_IRQN);
     NVIC_ClearPendingIRQ(BOARD_ENCODER_GPIOB_IRQN);
@@ -1372,14 +1453,20 @@ int main(void)
     NVIC_ClearPendingIRQ(TIMER_PID_INST_INT_IRQN);
     NVIC_EnableIRQ(TIMER_PID_INST_INT_IRQN);
 
+    /* 所有软件状态就绪后最后启动周期定时器。 */
     DL_TimerA_startCounter(TIMER_PID_INST);
 
     while (1) {
+        /*
+         * 10 ms 任务由定时器 ISR 置位，在主循环执行耗时的 I2C 和串口工作，
+         * 使电机 PID 中断保持短小、确定。
+         */
         if (gMpu6050SampleDue) {
             AngleTurnControl_Result angleTurnResult =
                 ANGLE_TURN_RESULT_NONE;
 
             gMpu6050SampleDue = false;
+            /* 先更新角速度/积分角度，再推进定角转向状态机。 */
             if (gMpu6050Ready) {
                 if (MPU6050_Angle_update()) {
                     angleTurnResult =
@@ -1391,6 +1478,7 @@ int main(void)
                 }
             }
 
+            /* 状态机只返回一次终态结果，在这里集中转换成串口消息。 */
             if (angleTurnResult == ANGLE_TURN_RESULT_COMPLETED) {
                 UART_sendString("ANGLE_TURN_DONE ");
                 UART_reportZAngle();
@@ -1402,6 +1490,7 @@ int main(void)
                     "ANGLE_TURN_FAULT check ANGLE_TURN_LEFT_YAW_SIGN\r\n");
             }
 
+            /* 灰度连续报告按 10:1 分频，即每 100 ms 输出一次。 */
             if (gGrayscaleStreamEnabled) {
                 gGrayscaleStreamDivider++;
                 if (gGrayscaleStreamDivider >=
@@ -1411,16 +1500,19 @@ int main(void)
                 }
             }
 
+            /* 巡线与 MPU6050 共用稳定的 10 ms 软件任务节拍。 */
             if (gLineTrackingEnabled) {
                 LineTracking_update();
             }
         }
 
+        /* 命令解析放在主循环；完成后才允许 ISR 接收下一条完整命令。 */
         if (gUartCommandReady) {
             Car_processUartCommand();
             gUartCommandReady = false;
         }
 
+        /* 汇总四路速度状态后输出；空闲时 WFI 降低无效 CPU 占用。 */
         UART_serviceMotorStatus();
         __WFI();
     }
@@ -1428,6 +1520,10 @@ int main(void)
 
 void GROUP1_IRQHandler(void)
 {
+    /*
+     * GPIOA/GPIOB 的编码器 B 相中断共享 GROUP1 入口。
+     * 先读取两端口的有效状态，再分别交给对应电机判断方向并累计计数。
+     */
     uint32_t gpioBInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
         BOARD_ENCODER_GPIOB_PORT, BOARD_ENCODER_GPIOB_MASK);
     uint32_t gpioAInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
@@ -1446,6 +1542,7 @@ void GROUP1_IRQHandler(void)
         MotorControl_handleEncoderEdge(&gMotorD);
     }
 
+    /* 使用进入中断时读取的位掩码一次性清除已处理标志。 */
     DL_GPIO_clearInterruptStatus(
         BOARD_ENCODER_GPIOB_PORT, gpioBInterruptStatus);
     DL_GPIO_clearInterruptStatus(
@@ -1454,12 +1551,14 @@ void GROUP1_IRQHandler(void)
 
 void TIMER_PID_INST_IRQHandler(void)
 {
+    /* 10 ms 实时节拍：四路速度环必须在中断内按固定周期更新。 */
     switch (DL_TimerA_getPendingInterrupt(TIMER_PID_INST)) {
         case DL_TIMER_IIDX_ZERO:
             MotorControl_update(&gMotorA);
             MotorControl_update(&gMotorB);
             MotorControl_update(&gMotorC);
             MotorControl_update(&gMotorD);
+            /* 传感器、转向和巡线任务较慢，只通知主循环执行。 */
             gMpu6050SampleDue = true;
             break;
         default:
@@ -1471,6 +1570,10 @@ void UART_0_INST_IRQHandler(void)
 {
     uint8_t rxData;
 
+    /*
+     * ISR 只完成按行接收：回车/换行封包，主循环负责解析。
+     * 当上一条命令尚未处理时暂停写缓冲区，避免覆盖正在解析的数据。
+     */
     switch (DL_UART_Main_getPendingInterrupt(UART_0_INST)) {
         case DL_UART_MAIN_IIDX_RX:
             rxData = DL_UART_Main_receiveData(UART_0_INST);
@@ -1478,6 +1581,7 @@ void UART_0_INST_IRQHandler(void)
             if (!gUartCommandReady) {
                 if ((rxData == (uint8_t) '\r') ||
                     (rxData == (uint8_t) '\n')) {
+                    /* 空行忽略；非空命令补字符串结束符后交给主循环。 */
                     if (gUartCommandLength > 0U) {
                         gUartCommand[gUartCommandLength] = '\0';
                         gUartCommandReady = true;
@@ -1488,6 +1592,7 @@ void UART_0_INST_IRQHandler(void)
                     gUartCommand[gUartCommandLength] = (char) rxData;
                     gUartCommandLength++;
                 } else {
+                    /* 超长命令直接丢弃当前内容，从缓冲区开头重新接收。 */
                     gUartCommandLength = 0U;
                 }
             }

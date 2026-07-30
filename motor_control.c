@@ -1,5 +1,6 @@
 #include "motor_control.h"
 
+/* 计算减速箱输出轴旋转一圈对应的编码器计数。 */
 static uint32_t MotorControl_getCountsPerOutputRevolution(
     const MotorControl *motor)
 {
@@ -15,17 +16,23 @@ static void MotorControl_resetPid(MotorControl *motor)
     motor->pidPreviousError = 0.0f;
 }
 
+/* 避免引入数学库，仅提供控制算法需要的浮点绝对值。 */
 static float MotorControl_absFloat(float value)
 {
     return (value < 0.0f) ? -value : value;
 }
 
+/* 将浮点 PID 输出按四舍五入转换为带符号百分比。 */
 static int16_t MotorControl_roundOutput(float output)
 {
     return (output >= 0.0f) ? (int16_t) (output + 0.5f)
                             : (int16_t) (output - 0.5f);
 }
 
+/*
+ * 把带符号 PWM 百分比转换为 TB6612 方向电平和比较值。
+ * 本工程 PWM 为低有效比较逻辑，所以占空比越大，比较值越小。
+ */
 static void MotorControl_applyOutput(
     MotorControl *motor, int16_t pwmPercent)
 {
@@ -40,6 +47,7 @@ static void MotorControl_applyOutput(
     }
 
     if (pwmPercent == 0) {
+        /* PWM=0 时撤销驱动，IN1/IN2 同时拉低。 */
         DL_GPIO_clearPins(motor->config.directionIn1Port,
             motor->config.directionIn1Pin);
         DL_GPIO_clearPins(motor->config.directionIn2Port,
@@ -47,12 +55,14 @@ static void MotorControl_applyOutput(
         compareValue = loadValue;
     } else {
         if (pwmPercent > 0) {
+            /* 正输出：IN1=1、IN2=0。 */
             DL_GPIO_setPins(motor->config.directionIn1Port,
                 motor->config.directionIn1Pin);
             DL_GPIO_clearPins(motor->config.directionIn2Port,
                 motor->config.directionIn2Pin);
             pwmMagnitude = (uint16_t) pwmPercent;
         } else {
+            /* 负输出：IN1=0、IN2=1。 */
             DL_GPIO_clearPins(motor->config.directionIn1Port,
                 motor->config.directionIn1Pin);
             DL_GPIO_setPins(motor->config.directionIn2Port,
@@ -73,6 +83,14 @@ static void MotorControl_applyOutput(
         compareValue, motor->config.pwmChannel);
 }
 
+/*
+ * 有符号增量式 PID：
+ *   Δu(k) = Kp[e(k)-e(k-1)] + Ki·e(k)
+ *         + Kd[e(k)-2e(k-1)+e(k-2)]
+ *
+ * 与只看速度绝对值的传统写法不同，这里允许在内轮被车身拖快时输出
+ * 有限的反向力矩，从而在小半径弧线中真正约束内轮转速。
+ */
 static int16_t MotorControl_updatePid(MotorControl *motor,
     float measuredCountsPerSample, int16_t targetRpm)
 {
@@ -84,12 +102,14 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
     float outputMaximum;
 
     if (motor->coastMode) {
+        /* 滑行模式完全撤销控制量，不执行主动制动。 */
         MotorControl_resetPid(motor);
         motor->pidDirection = 0;
         return 0;
     }
 
     if (targetRpm != 0) {
+        /* 目标方向变化时清空历史项，避免旧积分造成反冲。 */
         requestedDirection = (targetRpm > 0) ? 1 : -1;
         if (requestedDirection != motor->pidDirection) {
             MotorControl_resetPid(motor);
@@ -97,11 +117,7 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
         }
     } else if (MotorControl_absFloat(measuredCountsPerSample) <=
                (float) motor->config.zeroSpeedDeadbandCounts) {
-        /*
-         * Stop braking once the wheel is inside the encoder deadband.
-         * This prevents a residual integral term from reversing a stopped
-         * wheel.
-         */
+        /* 进入零速死区后停止制动，防止残余积分把静止车轮反向拉动。 */
         MotorControl_resetPid(motor);
         motor->pidDirection = 0;
         return 0;
@@ -122,11 +138,8 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
     motor->pidOutput += increment;
 
     /*
-     * Use signed control effort.  If a wheel is mechanically back-driven
-     * above its target (common for the inner wheels of a tight arc), the
-     * controller may briefly command the opposite bridge direction to
-     * generate braking torque.  Limit that counter-torque independently so
-     * it cannot become an uncontrolled reversal.
+     * 按目标方向设置不对称限幅：同向驱动可用完整输出，反向制动只允许
+     * brakeMaxPercent，避免制动力演变为不受控反转。
      */
     if (targetRpm > 0) {
         outputMinimum = -motor->config.brakeMaxPercent;
@@ -160,6 +173,7 @@ void MotorControl_init(
     DL_Timer_startCounter(motor->config.pwmInstance);
 }
 
+/* 设置目标转速并限幅；任何新目标都会退出滑行模式。 */
 void MotorControl_setTargetRpm(MotorControl *motor, int16_t targetRpm)
 {
     if (targetRpm > motor->config.maxTargetRpm) {
@@ -171,6 +185,7 @@ void MotorControl_setTargetRpm(MotorControl *motor, int16_t targetRpm)
     motor->targetRpm = targetRpm;
 }
 
+/* 紧急滑行：立即清除输出和 PID，不等待下一次定时中断。 */
 void MotorControl_coast(MotorControl *motor)
 {
     motor->targetRpm = 0;
@@ -180,6 +195,10 @@ void MotorControl_coast(MotorControl *motor)
     MotorControl_applyOutput(motor, 0);
 }
 
+/*
+ * B 相每次翻转时读取 A/B 当前电平，通过两相组合判断旋转方向。
+ * 该方法属于二倍频解码。
+ */
 void MotorControl_handleEncoderEdge(MotorControl *motor)
 {
     bool phaseB = (DL_GPIO_readPins(motor->config.encoderPhaseBPort,
@@ -194,6 +213,7 @@ void MotorControl_handleEncoderEdge(MotorControl *motor)
     }
 }
 
+/* 10 ms 速度环入口。编码器原始增量仍保留给 100 ms 状态统计。 */
 void MotorControl_update(MotorControl *motor)
 {
     float alpha = motor->config.speedFilterAlpha;
@@ -202,9 +222,11 @@ void MotorControl_update(MotorControl *motor)
     motor->encoderCount = 0;
 
     if ((alpha <= 0.0f) || (alpha > 1.0f)) {
+        /* 配置异常时退化为不滤波，避免控制器失效。 */
         alpha = 1.0f;
     }
     if (!motor->speedFilterReady) {
+        /* 首帧直接赋值，避免从 0 缓慢爬升造成启动滞后。 */
         motor->filteredSpeedCountsPerSample =
             (float) motor->speedCountsPerSample;
         motor->speedFilterReady = true;
@@ -244,6 +266,7 @@ bool MotorControl_takeStatus(
     status->pwmPercent = motor->pwmPercent;
     motor->statusReady = false;
 
+    /* 将 reportSamples 个周期的总计数换算为 0.1 RPM 单位。 */
     countsPerOutputRevolution =
         MotorControl_getCountsPerOutputRevolution(motor);
     rpmTimes10Numerator =

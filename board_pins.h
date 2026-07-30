@@ -1,18 +1,17 @@
 /*
- * Board pin adaptation layer.
+ * 板级引脚适配层
  *
- * SysConfig owns the physical pin assignments and generates
- * ti_msp_dl_config.h.  Application modules must use the BOARD_* aliases
- * below rather than SysConfig GPIO pin/port macros directly.  When wiring
- * changes, update this file after regenerating SysConfig; motor, chassis and
- * line-tracking logic should not need to change.
+ * 物理引脚由 SysConfig 管理并生成 ti_msp_dl_config.h。业务模块统一使用
+ * 本文件中的 BOARD_* 别名，不直接依赖 SysConfig 不稳定的分组宏名称。
+ * 更换接线后，先重新生成 SysConfig，再只更新本文件；电机、底盘和巡线
+ * 算法无需随引脚变化而修改。
  */
 #ifndef BOARD_PINS_H_
 #define BOARD_PINS_H_
 
 #include "ti_msp_dl_config.h"
 
-/* Motor A: PWM PB10, AIN1 PB1, AIN2 PB11, EA PA7, EB PB14. */
+/* 电机 A（右后）：PWM PB10，AIN1 PB1，AIN2 PB11，EA PA7，EB PB14。 */
 #define BOARD_MOTOR_A_PWM_INSTANCE        PWM_MOTOR_AB_INST
 #define BOARD_MOTOR_A_PWM_CHANNEL         DL_TIMER_CC_0_INDEX
 #define BOARD_MOTOR_A_DIR1_PORT           GPIO_MOTOR_A_AIN_1_PORT
@@ -24,7 +23,7 @@
 #define BOARD_MOTOR_A_ENCODER_B_PORT      GPIO_MOTOR_A_EB_1_PORT
 #define BOARD_MOTOR_A_ENCODER_B_PIN       GPIO_MOTOR_A_EB_1_PIN
 
-/* Motor B: PWM PA24, BIN1 PA22, BIN2 PB24, EA PA15, EB PA17. */
+/* 电机 B（右前）：PWM PA24，BIN1 PA22，BIN2 PB24，EA PA15，EB PA17。 */
 #define BOARD_MOTOR_B_PWM_INSTANCE        PWM_MOTOR_AB_INST
 #define BOARD_MOTOR_B_PWM_CHANNEL         DL_TIMER_CC_1_INDEX
 #define BOARD_MOTOR_B_DIR1_PORT           GPIO_MOTOR_B_BIN_1_PORT
@@ -36,7 +35,7 @@
 #define BOARD_MOTOR_B_ENCODER_B_PORT      GPIO_MOTOR_B_EB_2_PORT
 #define BOARD_MOTOR_B_ENCODER_B_PIN       GPIO_MOTOR_B_EB_2_PIN
 
-/* Motor C: PWM PA0, CIN1 PB5, CIN2 PB4, EA PB12, EB PB13. */
+/* 电机 C（左前）：PWM PA0，CIN1 PB5，CIN2 PB4，EA PB12，EB PB13。 */
 #define BOARD_MOTOR_C_PWM_INSTANCE        PWM_MOTOR_CD_INST
 #define BOARD_MOTOR_C_PWM_CHANNEL         DL_TIMER_CC_0_INDEX
 #define BOARD_MOTOR_C_DIR1_PORT           GPIO_MOTOR_C_PORT
@@ -48,7 +47,7 @@
 #define BOARD_MOTOR_C_ENCODER_B_PORT      GPIO_MOTOR_C_PORT
 #define BOARD_MOTOR_C_ENCODER_B_PIN       GPIO_MOTOR_C_EB_3_PIN
 
-/* Motor D: PWM PA1, DIN1 PA9, DIN2 PA8, EA PB15, EB PB16. */
+/* 电机 D（左后）：PWM PA1，DIN1 PA9，DIN2 PA8，EA PB15，EB PB16。 */
 #define BOARD_MOTOR_D_PWM_INSTANCE        PWM_MOTOR_CD_INST
 #define BOARD_MOTOR_D_PWM_CHANNEL         DL_TIMER_CC_1_INDEX
 #define BOARD_MOTOR_D_DIR1_PORT           GPIO_MOTOR_D_DIN_1_PORT
@@ -60,7 +59,7 @@
 #define BOARD_MOTOR_D_ENCODER_B_PORT      GPIO_MOTOR_D_EB_4_PORT
 #define BOARD_MOTOR_D_ENCODER_B_PIN       GPIO_MOTOR_D_EB_4_PIN
 
-/* Encoder IRQ routing: A/C/D EB are on GPIOB; B EB is on GPIOA. */
+/* 编码器中断路由：A/C/D 的 EB 在 GPIOB，B 的 EB 在 GPIOA。 */
 #define BOARD_ENCODER_GPIOB_IRQN          GPIO_MULTIPLE_GPIOB_INT_IRQN
 #define BOARD_ENCODER_GPIOA_IRQN          GPIO_MOTOR_B_INT_IRQN
 #define BOARD_ENCODER_GPIOB_PORT          GPIOB
@@ -70,7 +69,7 @@
                                            BOARD_MOTOR_D_ENCODER_B_PIN)
 #define BOARD_ENCODER_GPIOA_MASK          BOARD_MOTOR_B_ENCODER_B_PIN
 
-/* 8-channel grayscale module: AD0 PB27, AD1 PB26, AD2 PB23, OUT PA12. */
+/* 八路灰度模块：AD0 PB27，AD1 PB26，AD2 PB23，OUT PA12。 */
 #define BOARD_GRAYSCALE_AD0_PORT          GPIO_GRAYSCALE_AD0_PORT
 #define BOARD_GRAYSCALE_AD0_PIN           GPIO_GRAYSCALE_AD0_PIN
 #define BOARD_GRAYSCALE_AD1_PORT          GPIO_GRAYSCALE_AD1_PORT
