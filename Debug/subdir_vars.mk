@@ -12,6 +12,8 @@ C_SRCS += \
 ../angle_turn_control.c \
 ../car_control.c \
 ../grayscale_sensor.c \
+../lap_task_control.c \
+../line_tracking.c \
 ../main.c \
 ./ti_msp_dl_config.c \
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c \
@@ -19,10 +21,10 @@ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_file
 ../mpu6050_angle.c \
 ../oled.c \
 ../stopwatch.c \
-../task1_control.c \
-../task2_control.c \
-../task3_control.c \
-../task_manager.c 
+../straight_task_control.c \
+../task_executor.c \
+../task_manager.c \
+../task_profiles.c 
 
 GEN_CMDS += \
 ./device_linker.cmd 
@@ -36,6 +38,8 @@ C_DEPS += \
 ./angle_turn_control.d \
 ./car_control.d \
 ./grayscale_sensor.d \
+./lap_task_control.d \
+./line_tracking.d \
 ./main.d \
 ./ti_msp_dl_config.d \
 ./startup_mspm0g350x_ticlang.d \
@@ -43,10 +47,10 @@ C_DEPS += \
 ./mpu6050_angle.d \
 ./oled.d \
 ./stopwatch.d \
-./task1_control.d \
-./task2_control.d \
-./task3_control.d \
-./task_manager.d 
+./straight_task_control.d \
+./task_executor.d \
+./task_manager.d \
+./task_profiles.d 
 
 GEN_OPTS += \
 ./device.opt 
@@ -55,6 +59,8 @@ OBJS += \
 ./angle_turn_control.o \
 ./car_control.o \
 ./grayscale_sensor.o \
+./lap_task_control.o \
+./line_tracking.o \
 ./main.o \
 ./ti_msp_dl_config.o \
 ./startup_mspm0g350x_ticlang.o \
@@ -62,10 +68,10 @@ OBJS += \
 ./mpu6050_angle.o \
 ./oled.o \
 ./stopwatch.o \
-./task1_control.o \
-./task2_control.o \
-./task3_control.o \
-./task_manager.o 
+./straight_task_control.o \
+./task_executor.o \
+./task_manager.o \
+./task_profiles.o 
 
 GEN_MISC_FILES += \
 ./device.cmd.genlibs \
@@ -76,6 +82,8 @@ OBJS__QUOTED += \
 "angle_turn_control.o" \
 "car_control.o" \
 "grayscale_sensor.o" \
+"lap_task_control.o" \
+"line_tracking.o" \
 "main.o" \
 "ti_msp_dl_config.o" \
 "startup_mspm0g350x_ticlang.o" \
@@ -83,10 +91,10 @@ OBJS__QUOTED += \
 "mpu6050_angle.o" \
 "oled.o" \
 "stopwatch.o" \
-"task1_control.o" \
-"task2_control.o" \
-"task3_control.o" \
-"task_manager.o" 
+"straight_task_control.o" \
+"task_executor.o" \
+"task_manager.o" \
+"task_profiles.o" 
 
 GEN_MISC_FILES__QUOTED += \
 "device.cmd.genlibs" \
@@ -97,6 +105,8 @@ C_DEPS__QUOTED += \
 "angle_turn_control.d" \
 "car_control.d" \
 "grayscale_sensor.d" \
+"lap_task_control.d" \
+"line_tracking.d" \
 "main.d" \
 "ti_msp_dl_config.d" \
 "startup_mspm0g350x_ticlang.d" \
@@ -104,10 +114,10 @@ C_DEPS__QUOTED += \
 "mpu6050_angle.d" \
 "oled.d" \
 "stopwatch.d" \
-"task1_control.d" \
-"task2_control.d" \
-"task3_control.d" \
-"task_manager.d" 
+"straight_task_control.d" \
+"task_executor.d" \
+"task_manager.d" \
+"task_profiles.d" 
 
 GEN_FILES__QUOTED += \
 "device_linker.cmd" \
@@ -118,6 +128,8 @@ C_SRCS__QUOTED += \
 "../angle_turn_control.c" \
 "../car_control.c" \
 "../grayscale_sensor.c" \
+"../lap_task_control.c" \
+"../line_tracking.c" \
 "../main.c" \
 "./ti_msp_dl_config.c" \
 "E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/m0p/startup_system_files/ticlang/startup_mspm0g350x_ticlang.c" \
@@ -125,10 +137,10 @@ C_SRCS__QUOTED += \
 "../mpu6050_angle.c" \
 "../oled.c" \
 "../stopwatch.c" \
-"../task1_control.c" \
-"../task2_control.c" \
-"../task3_control.c" \
-"../task_manager.c" 
+"../straight_task_control.c" \
+"../task_executor.c" \
+"../task_manager.c" \
+"../task_profiles.c" 
 
 SYSCFG_SRCS__QUOTED += \
 "../main.syscfg" 

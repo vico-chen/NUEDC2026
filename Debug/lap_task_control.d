@@ -1,7 +1,7 @@
 # FIXED
 
-task3_control.o: ../task3_control.c ../task3_control.h ../task1_control.h \
- ../angle_turn_control.h ../car_control.h ../motor_control.h \
+lap_task_control.o: ../lap_task_control.c ../lap_task_control.h \
+ ../line_tracking.h ../car_control.h ../motor_control.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_adc12.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h \
@@ -84,12 +84,9 @@ task3_control.o: ../task3_control.c ../task3_control.h ../task1_control.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h \
- ../task_manager.h ../stopwatch.h \
- ti_msp_dl_config.h \
- ../oled.h ../task2_control.h
-../task3_control.h:
-../task1_control.h:
-../angle_turn_control.h:
+ ../grayscale_sensor.h
+../lap_task_control.h:
+../line_tracking.h:
 ../car_control.h:
 ../motor_control.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h:
@@ -174,8 +171,4 @@ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_vref.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h:
-../task_manager.h:
-../stopwatch.h:
-ti_msp_dl_config.h:
-../oled.h:
-../task2_control.h:
+../grayscale_sensor.h:

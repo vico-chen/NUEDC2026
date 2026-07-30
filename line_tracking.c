@@ -1,0 +1,290 @@
+#include "line_tracking.h"
+
+/* 八路灰度模块检测到黑线时的有效电平。 */
+#define LINE_TRACKING_ACTIVE_LEVEL (1U)
+
+/* 巡线 PID 参数。 */
+#define LINE_PID_KP (4.0f)
+#define LINE_PID_KI (0.01f)
+#define LINE_PID_KD (0.0f)
+#define LINE_PID_INTEGRAL_LIMIT (2000.0f)
+#define LINE_PID_DEADBAND_RPM_OFFSET (8)
+#define LINE_ERR_DEADBAND (5)
+#define LINE_ERR_ABS_FALLBACK (30)
+#define LINE_DEBUG_PRINT_PERIOD_SAMPLES (10U)
+#define LINE_SENSOR_DEBOUNCE_SAMPLES (2U)
+
+/* 清除 PID、传感器滤波状态和丢线方向记忆。 */
+void LineTracking_reset(LineTracking *tracking)
+{
+    uint8_t i;
+
+    tracking->integral = 0.0f;
+    tracking->lastError = 0;
+    tracking->debugDivider = 0U;
+    tracking->filterReady = false;
+
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        tracking->filteredValues[i] = 0U;
+        tracking->pendingValues[i] = 0U;
+        tracking->pendingCount[i] = 0U;
+    }
+}
+
+void LineTracking_init(LineTracking *tracking,
+    const LineTracking_Config *config, int16_t defaultSpeedRpm)
+{
+    tracking->config = *config;
+    tracking->enabled = false;
+    tracking->debugEnabled = false;
+    tracking->baseSpeedRpm = defaultSpeedRpm;
+    LineTracking_reset(tracking);
+}
+
+void LineTracking_setEnabled(LineTracking *tracking, bool enabled)
+{
+    tracking->enabled = enabled;
+}
+
+bool LineTracking_isEnabled(const LineTracking *tracking)
+{
+    return tracking->enabled;
+}
+
+void LineTracking_setDebugEnabled(LineTracking *tracking, bool enabled)
+{
+    tracking->debugEnabled = enabled;
+}
+
+void LineTracking_setSpeed(LineTracking *tracking, int16_t speedRpm)
+{
+    tracking->baseSpeedRpm = speedRpm;
+}
+
+int16_t LineTracking_getSpeed(const LineTracking *tracking)
+{
+    return tracking->baseSpeedRpm;
+}
+
+/* 对八路数字灰度结果进行软件消抖。 */
+static void LineTracking_filterSensors(LineTracking *tracking,
+    const uint8_t raw[GRAYSCALE_SENSOR_CHANNELS],
+    uint8_t filtered[GRAYSCALE_SENSOR_CHANNELS])
+{
+    uint8_t i;
+
+    if (!tracking->filterReady) {
+        for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+            tracking->filteredValues[i] = raw[i];
+            tracking->pendingValues[i] = raw[i];
+            tracking->pendingCount[i] = 0U;
+            filtered[i] = raw[i];
+        }
+        tracking->filterReady = true;
+        return;
+    }
+
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        if (raw[i] == tracking->filteredValues[i]) {
+            tracking->pendingValues[i] = raw[i];
+            tracking->pendingCount[i] = 0U;
+        } else if (raw[i] == tracking->pendingValues[i]) {
+            if (tracking->pendingCount[i] < 255U) {
+                tracking->pendingCount[i]++;
+            }
+            if (tracking->pendingCount[i] >=
+                LINE_SENSOR_DEBOUNCE_SAMPLES) {
+                tracking->filteredValues[i] = raw[i];
+                tracking->pendingCount[i] = 0U;
+            }
+        } else {
+            tracking->pendingValues[i] = raw[i];
+            tracking->pendingCount[i] = 1U;
+        }
+        filtered[i] = tracking->filteredValues[i];
+    }
+}
+
+/*
+ * 根据 X1～X8 的横向位置计算偏差。
+ * X1 位于最左侧，X8 位于最右侧；负数向左修正，正数向右修正。
+ */
+static int16_t LineTracking_computeError(LineTracking *tracking,
+    const uint8_t values[GRAYSCALE_SENSOR_CHANNELS])
+{
+    static const int16_t weights[GRAYSCALE_SENSOR_CHANNELS] = {
+        -30, -20, -15, 0, 0, 15, 20, 30
+    };
+    int32_t weightedSum = 0;
+    uint8_t activeCount = 0U;
+    uint8_t i;
+    int16_t error;
+
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
+            weightedSum += (int32_t) weights[i];
+            activeCount++;
+        }
+    }
+
+    if (activeCount > 0U) {
+        error = (int16_t) (weightedSum / (int32_t) activeCount);
+        if ((error <= LINE_ERR_DEADBAND) &&
+            (error >= -LINE_ERR_DEADBAND)) {
+            return 0;
+        }
+        return error;
+    }
+
+    /* 丢线后沿上一次偏差方向继续寻找线路。 */
+    if (tracking->lastError > 0) {
+        return LINE_ERR_ABS_FALLBACK;
+    }
+    if (tracking->lastError < 0) {
+        return (int16_t) (-LINE_ERR_ABS_FALLBACK);
+    }
+    return 0;
+}
+
+/* 把 PID 输出转换成左右轮差速。 */
+static void LineTracking_applyMotion(LineTracking *tracking,
+    int16_t pidRpmOffset)
+{
+    int16_t speedRpm = tracking->baseSpeedRpm;
+    int16_t pidAbs = (pidRpmOffset < 0) ?
+        (int16_t) (-pidRpmOffset) : pidRpmOffset;
+    int16_t innerRpm;
+    uint8_t innerPercent;
+    CarControl_Motion motion;
+
+    if (speedRpm <= 0) {
+        CarControl_stop(tracking->config.car);
+        return;
+    }
+
+    if (pidAbs <= LINE_PID_DEADBAND_RPM_OFFSET) {
+        CarControl_setMotion(tracking->config.car, CAR_CONTROL_FORWARD,
+            speedRpm, CarControl_getTurnInnerPercent(tracking->config.car));
+        return;
+    }
+
+    if (pidAbs > speedRpm) {
+        pidAbs = speedRpm;
+    }
+    innerRpm = (int16_t) (speedRpm - pidAbs);
+    if (innerRpm < 0) {
+        innerRpm = 0;
+    }
+
+    innerPercent = (uint8_t) ((int32_t) innerRpm * 100 /
+        (int32_t) speedRpm);
+    if (innerPercent > 100U) {
+        innerPercent = 100U;
+    }
+    if (innerPercent == 0U) {
+        innerPercent = 1U;
+    }
+
+    motion = (pidRpmOffset < 0) ? CAR_CONTROL_FORWARD_LEFT
+                                 : CAR_CONTROL_FORWARD_RIGHT;
+    CarControl_setMotion(tracking->config.car, motion,
+        speedRpm, innerPercent);
+}
+
+void LineTracking_update(LineTracking *tracking)
+{
+    uint8_t rawValues[GRAYSCALE_SENSOR_CHANNELS];
+    uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
+    uint8_t activeCount = 0U;
+    uint8_t i;
+    int16_t error;
+    float derivative;
+    float pid;
+    int16_t pidOffsetRpm;
+
+    if (!tracking->enabled) {
+        return;
+    }
+
+    Grayscale_Sensor_ReadAll(rawValues);
+    LineTracking_filterSensors(tracking, rawValues, values);
+
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
+            activeCount++;
+        }
+    }
+
+    error = LineTracking_computeError(tracking, values);
+    if ((activeCount == 0U) || (error == 0)) {
+        tracking->integral = 0.0f;
+    } else {
+        tracking->integral += (float) error;
+        if (tracking->integral > LINE_PID_INTEGRAL_LIMIT) {
+            tracking->integral = LINE_PID_INTEGRAL_LIMIT;
+        } else if (tracking->integral < -LINE_PID_INTEGRAL_LIMIT) {
+            tracking->integral = -LINE_PID_INTEGRAL_LIMIT;
+        }
+    }
+
+    derivative = (float) (error - tracking->lastError);
+    pid = (LINE_PID_KP * (float) error) +
+        (LINE_PID_KI * tracking->integral) +
+        (LINE_PID_KD * derivative);
+
+    if (pid > (float) tracking->baseSpeedRpm) {
+        pid = (float) tracking->baseSpeedRpm;
+    } else if (pid < -(float) tracking->baseSpeedRpm) {
+        pid = -(float) tracking->baseSpeedRpm;
+    }
+
+    pidOffsetRpm = (int16_t) pid;
+    tracking->lastError = error;
+    LineTracking_applyMotion(tracking, pidOffsetRpm);
+
+    if (tracking->debugEnabled &&
+        (tracking->config.sendString != 0) &&
+        (tracking->config.sendInt32 != 0)) {
+        tracking->debugDivider++;
+        if (tracking->debugDivider >=
+            LINE_DEBUG_PRINT_PERIOD_SAMPLES) {
+            tracking->debugDivider = 0U;
+            tracking->config.sendString("line:");
+            tracking->config.sendInt32((int32_t) error);
+            tracking->config.sendString(",");
+            tracking->config.sendInt32((int32_t) pidOffsetRpm);
+            for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+                tracking->config.sendString(",");
+                tracking->config.sendInt32((int32_t) values[i]);
+            }
+            tracking->config.sendString("\r\n");
+        }
+    }
+}
+
+uint8_t LineTracking_readActiveMask(void)
+{
+    uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
+    uint8_t activeMask = 0U;
+    uint8_t i;
+
+    Grayscale_Sensor_ReadAll(values);
+    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
+        if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
+            activeMask |= (uint8_t) (1U << i);
+        }
+    }
+    return activeMask;
+}
+
+uint8_t LineTracking_readActiveCount(void)
+{
+    uint8_t mask = LineTracking_readActiveMask();
+    uint8_t count = 0U;
+
+    while (mask != 0U) {
+        count = (uint8_t) (count + (mask & 0x01U));
+        mask >>= 1U;
+    }
+    return count;
+}

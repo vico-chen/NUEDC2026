@@ -250,107 +250,12 @@ bool OLED_ShowTask(uint8_t taskNumber)
 {
     char taskText[] = "TASK 1";
 
-    if ((taskNumber < 1U) || (taskNumber > 3U)) {
+    if ((taskNumber < 1U) || (taskNumber > 6U)) {
         return false;
     }
 
     taskText[5] = (char) ('0' + taskNumber);
     return OLED_clear() && OLED_writeString(46U, 3U, taskText);
-}
-
-bool OLED_ShowTask1Endpoint(uint8_t endpointNumber)
-{
-    char endpointText[] = "TASK1 END1";
-
-    if ((endpointNumber < 1U) || (endpointNumber > 2U)) {
-        return false;
-    }
-
-    endpointText[9] = (char) ('0' + endpointNumber);
-    return OLED_clear() && OLED_writeString(34U, 3U, endpointText);
-}
-
-bool OLED_ShowTask2Endpoint(uint8_t endpointNumber)
-{
-    char endpointText[] = "TASK2 END1";
-
-    if (endpointNumber == 0U) {
-        return OLED_clear() &&
-            OLED_writeString(34U, 3U, "TASK2 AUTO");
-    }
-    if (endpointNumber > 2U) {
-        return false;
-    }
-
-    endpointText[9] = (char) ('0' + endpointNumber);
-    return OLED_clear() &&
-        OLED_writeString(34U, 3U, endpointText);
-}
-
-bool OLED_ShowTask2Number(uint8_t number)
-{
-    char numberText[] = "TASK2 NUM0";
-
-    if (number > 9U) {
-        return false;
-    }
-    numberText[9] = (char) ('0' + number);
-    /*
-     * Do not clear the whole screen here. OpenMV may repeat a result every
-     * frame; a full 1024-byte blocking clear would delay the 10 ms control
-     * loop. This fixed-width string overwrites the previous Task2 message.
-     */
-    return OLED_writeString(34U, 3U, numberText);
-}
-
-bool OLED_ShowTask2Turn(char direction)
-{
-    char turnText[] = "TASK2 L   ";
-
-    if ((direction != 'L') && (direction != 'R')) {
-        return false;
-    }
-    turnText[6] = direction;
-    return OLED_writeString(34U, 3U, turnText);
-}
-
-bool OLED_ShowTask3Number(uint8_t number)
-{
-    char numberText[] = "TASK3 NUM0";
-
-    if (number > 9U) {
-        return false;
-    }
-    numberText[9] = (char) ('0' + number);
-    return OLED_writeString(34U, 3U, numberText);
-}
-
-bool OLED_ShowTask3Turn(char direction)
-{
-    char turnText[] = "TASK3 L   ";
-
-    if ((direction != 'L') && (direction != 'R')) {
-        return false;
-    }
-    turnText[6] = direction;
-    return OLED_writeString(34U, 3U, turnText);
-}
-
-bool OLED_ShowTask3Endpoint(uint8_t endpointNumber)
-{
-    char endpointText[] = "TASK3 END1";
-
-    if (endpointNumber == 0U) {
-        return OLED_clear() &&
-            OLED_writeString(34U, 3U, "TASK3 AUTO");
-    }
-    if (endpointNumber > 4U) {
-        return false;
-    }
-
-    endpointText[9] = (char) ('0' + endpointNumber);
-    return OLED_clear() &&
-        OLED_writeString(34U, 3U, endpointText);
 }
 
 bool OLED_ShowCalibration(uint8_t secondsRemaining)

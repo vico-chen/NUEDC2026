@@ -1,6 +1,8 @@
 "./angle_turn_control.o"
 "./car_control.o"
 "./grayscale_sensor.o"
+"./lap_task_control.o"
+"./line_tracking.o"
 "./main.o"
 "./ti_msp_dl_config.o"
 "./startup_mspm0g350x_ticlang.o"
@@ -8,10 +10,10 @@
 "./mpu6050_angle.o"
 "./oled.o"
 "./stopwatch.o"
-"./task1_control.o"
-"./task2_control.o"
-"./task3_control.o"
+"./straight_task_control.o"
+"./task_executor.o"
 "./task_manager.o"
+"./task_profiles.o"
 -l"./device_linker.cmd"
 -ldevice.cmd.genlibs
 -llibc.a

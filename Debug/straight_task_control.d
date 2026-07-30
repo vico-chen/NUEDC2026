@@ -1,7 +1,7 @@
 # FIXED
 
-task1_control.o: ../task1_control.c ../task1_control.h \
- ../angle_turn_control.h ../car_control.h ../motor_control.h \
+straight_task_control.o: ../straight_task_control.c \
+ ../straight_task_control.h ../car_control.h ../motor_control.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_adc12.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h \
@@ -83,12 +83,8 @@ task1_control.o: ../task1_control.c ../task1_control.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_vref.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
- E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h \
- ../task_manager.h ../stopwatch.h \
- ti_msp_dl_config.h \
- ../oled.h
-../task1_control.h:
-../angle_turn_control.h:
+ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h
+../straight_task_control.h:
 ../car_control.h:
 ../motor_control.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/driverlib.h:
@@ -173,7 +169,3 @@ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_vref.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h:
-../task_manager.h:
-../stopwatch.h:
-ti_msp_dl_config.h:
-../oled.h:

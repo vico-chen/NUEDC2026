@@ -1,18 +1,18 @@
 ******************************************************************************
             TI ARM Clang Linker PC v5.1.1                      
 ******************************************************************************
->> Linked Wed Jul 29 23:54:42 2026
+>> Linked Thu Jul 30 14:28:52 2026
 
 OUTPUT FILE NAME:   <main.out>
-ENTRY POINT SYMBOL: "_c_int00_noargs"  address: 0000b829
+ENTRY POINT SYMBOL: "_c_int00_noargs"  address: 0000b159
 
 
 MEMORY CONFIGURATION
 
          name            origin    length      used     unused   attr    fill
 ----------------------  --------  ---------  --------  --------  ----  --------
-  FLASH                 00000000   00020000  0000c5e0  00013a20  R  X
-  SRAM                  20200000   00008000  00000819  000077e7  RW X
+  FLASH                 00000000   00020000  0000bfc0  00014040  R  X
+  SRAM                  20200000   00008000  00000868  00007798  RW X
   BCR_CONFIG            41c00000   000000ff  00000000  000000ff  R   
   BSL_CONFIG            41c00100   00000080  00000000  00000080  R   
 
@@ -21,14 +21,14 @@ SEGMENT ALLOCATION MAP
 
 run origin  load origin   length   init length attrs members
 ----------  ----------- ---------- ----------- ----- -------
-00000000    00000000    0000c5e0   0000c5e0    r-x
+00000000    00000000    0000bfc0   0000bfc0    r-x
   00000000    00000000    000000c0   000000c0    r-- .intvecs
-  000000c0    000000c0    0000baa0   0000baa0    r-x .text
-  0000bb60    0000bb60    00000a50   00000a50    r-- .rodata
-  0000c5b0    0000c5b0    00000030   00000030    r-- .cinit
-20200000    20200000    00000619   00000000    rw-
-  20200000    20200000    00000600   00000000    rw- .bss
-  20200600    20200600    00000019   00000000    rw- .data
+  000000c0    000000c0    0000b440   0000b440    r-x .text
+  0000b500    0000b500    00000a90   00000a90    r-- .rodata
+  0000bf90    0000bf90    00000030   00000030    r-- .cinit
+20200000    20200000    00000669   00000000    rw-
+  20200000    20200000    0000064f   00000000    rw- .bss
+  20200650    20200650    00000019   00000000    rw- .data
 20207e00    20207e00    00000200   00000000    rw-
   20207e00    20207e00    00000200   00000000    rw- .stack
 
@@ -41,337 +41,355 @@ section   page    origin      length       input sections
 .intvecs   0    00000000    000000c0     
                   00000000    000000c0     startup_mspm0g350x_ticlang.o (.intvecs)
 
-.text      0    000000c0    0000baa0     
-                  000000c0    00006668     main.o (.text.main)
-                  00006728    000008a8     main.o (.text.LineTracking_update)
-                  00006fd0    000005d4     main.o (.text.UART_reportMotorStatus)
-                  000075a4    0000056c     oled.o (.text.OLED_ShowStopwatch)
-                  00007b10    00000438     main.o (.text.UART_sendVofaMotorChannels)
-                  00007f48    000003d2     oled.o (.text.OLED_Init)
-                  0000831a    00000002     startup_mspm0g350x_ticlang.o (.text.Default_Handler)
-                  0000831c    000003ac     task1_control.o (.text.Task1Control_update)
-                  000086c8    000002f4     motor_control.o (.text.MotorControl_update)
-                  000089bc    00000280     oled.o (.text.OLED_ShowTask1Endpoint)
-                  00008c3c    00000278     mpu6050_angle.o (.text.MPU6050_Angle_initWithProgress)
-                  00008eb4    00000278     oled.o (.text.OLED_ShowTask)
-                  0000912c    0000026c     oled.o (.text.OLED_ShowCalibration)
-                  00009398    00000238     main.o (.text.UART_reportZAngle)
-                  000095d0    000001d4     mpu6050_angle.o (.text.MPU6050_readRegisters)
-                  000097a4    000001b0     oled.o (.text.OLED_writeString)
-                  00009954    00000180     grayscale_sensor.o (.text.Grayscale_Sensor_ReadAll)
-                  00009ad4    00000160     ti_msp_dl_config.o (.text.SYSCFG_DL_GPIO_init)
-                  00009c34    00000138     car_control.o (.text.CarControl_setMotion)
-                  00009d6c    00000118     task_manager.o (.text.TaskManager_update)
-                  00009e84    00000104     driverlib.a : dl_timer.o (.text.DL_Timer_initFourCCPWMMode)
-                  00009f88    00000104     mpu6050_angle.o (.text.MPU6050_writeRegister)
-                  0000a08c    00000104     oled.o (.text.OLED_writeByte)
-                  0000a190    000000fc     driverlib.a : dl_timer.o (.text.DL_Timer_initTimerMode)
-                  0000a28c    000000e8     angle_turn_control.o (.text.AngleTurnControl_update)
-                  0000a374    000000dc     task_manager.o (.text.TaskManager_init)
-                  0000a450    000000d8     libclang_rt.builtins.a : addsf3.S.obj (.text)
-                  0000a528    000000a2     main.o (.text.Task1_readActiveChannelCount)
-                  0000a5ca    00000002     libclang_rt.builtins.a : aeabi_div0.c.obj (.text.__aeabi_idiv0)
-                  0000a5cc    000000a2                            : udivmoddi4.S.obj (.text)
-                  0000a66e    0000009a     libc.a : memcpy16.S.obj (.text:memcpy)
-                  0000a708    00000090     ti_msp_dl_config.o (.text.SYSCFG_DL_PWM_MOTOR_AB_init)
-                  0000a798    00000090     ti_msp_dl_config.o (.text.SYSCFG_DL_PWM_MOTOR_CD_init)
-                  0000a828    0000008c     libclang_rt.builtins.a : comparesf2.S.obj (.text)
-                  0000a8b4    0000008c                            : mulsf3.S.obj (.text)
-                  0000a940    0000008a     motor_control.o (.text.MotorControl_takeStatus)
-                  0000a9ca    00000002     libclang_rt.builtins.a : aeabi_div0.c.obj (.text.__aeabi_ldiv0)
-                  0000a9cc    00000088     ti_msp_dl_config.o (.text.SYSCFG_DL_initPower)
-                  0000aa54    00000084     angle_turn_control.o (.text.AngleTurnControl_start)
-                  0000aad8    00000082     libclang_rt.builtins.a : divsf3.S.obj (.text)
-                  0000ab5a    0000007c     main.o (.text.Task1_readActiveChannelMask)
-                  0000abd6    00000002     --HOLE-- [fill = 0]
-                  0000abd8    0000007c     libc.a : copy_decompress_lzss.c.obj (.text:decompress:lzss)
-                  0000ac54    00000074     main.o (.text.GROUP1_IRQHandler)
-                  0000acc8    00000070     ti_msp_dl_config.o (.text.SYSCFG_DL_UART_0_init)
-                  0000ad38    00000070     ti_msp_dl_config.o (.text.SYSCFG_DL_UART_1_init)
-                  0000ada8    00000070     ti_msp_dl_config.o (.text.SYSCFG_DL_UART_OPENMV_init)
-                  0000ae18    00000064     main.o (.text.UART0_IRQHandler)
-                  0000ae7c    00000062     libc.a : memset16.S.obj (.text:memset)
-                  0000aede    00000002     --HOLE-- [fill = 0]
-                  0000aee0    00000060     mpu6050_angle.o (.text.MPU6050_Angle_update)
-                  0000af40    0000005e     driverlib.a : dl_i2c.o (.text.DL_I2C_fillControllerTXFIFO)
-                  0000af9e    00000002     --HOLE-- [fill = 0]
-                  0000afa0    0000005a     libclang_rt.builtins.a : aeabi_fcmp.S.obj (.text)
-                  0000affa    00000002     --HOLE-- [fill = 0]
-                  0000affc    00000058     motor_control.o (.text.MotorControl_init)
-                  0000b054    00000058     main.o (.text.TIMA1_IRQHandler)
-                  0000b0ac    00000058     main.o (.text.UART1_IRQHandler)
-                  0000b104    00000056     libclang_rt.builtins.a : aeabi_idivmod.S.obj (.text)
-                  0000b15a    00000002     --HOLE-- [fill = 0]
-                  0000b15c    00000054     ti_msp_dl_config.o (.text.SYSCFG_DL_I2C_MPU6050_init)
-                  0000b1b0    00000054     ti_msp_dl_config.o (.text.SYSCFG_DL_I2C_OLED_init)
-                  0000b204    00000050     ti_msp_dl_config.o (.text.SYSCFG_DL_init)
-                  0000b254    00000050     task1_control.o (.text.Task1Control_init)
-                  0000b2a4    0000004e     libclang_rt.builtins.a : floatdisf.S.obj (.text)
-                  0000b2f2    00000002     --HOLE-- [fill = 0]
-                  0000b2f4    0000004c     main.o (.text.UART3_IRQHandler)
-                  0000b340    00000048     driverlib.a : dl_uart.o (.text.DL_UART_init)
-                  0000b388    00000044     main.o (.text.LineTracking_resetPid)
-                  0000b3cc    00000040     ti_msp_dl_config.o (.text.SYSCFG_DL_SYSCTL_init)
-                  0000b40c    00000040     task1_control.o (.text.Task1Control_reset)
-                  0000b44c    00000040     main.o (.text.UART_sendString)
-                  0000b48c    00000040     libclang_rt.builtins.a : aeabi_uidivmod.S.obj (.text)
-                  0000b4cc    0000003e     car_control.o (.text.CarControl_init)
-                  0000b50a    0000003e     libclang_rt.builtins.a : divmoddi4.c.obj (.text.__divmoddi4)
-                  0000b548    0000003c     driverlib.a : dl_i2c.o (.text.DL_I2C_flushControllerTXFIFO)
-                  0000b584    0000003c     libc.a : autoinit.c.obj (.text:__TI_auto_init_nobinit_nopinit)
-                  0000b5c0    0000003c     libclang_rt.builtins.a : floatsisf.S.obj (.text)
-                  0000b5fc    0000003a     motor_control.o (.text.MotorControl_coast)
-                  0000b636    00000002     --HOLE-- [fill = 0]
-                  0000b638    0000003a     libclang_rt.builtins.a : muldsi3.S.obj (.text)
-                  0000b672    00000002     --HOLE-- [fill = 0]
-                  0000b674    00000038     ti_msp_dl_config.o (.text.SYSCFG_DL_TIMER_PID_init)
-                  0000b6ac    00000038     libclang_rt.builtins.a : fixsfsi.S.obj (.text)
-                  0000b6e4    00000032     motor_control.o (.text.MotorControl_handleEncoderEdge)
-                  0000b716    00000002     --HOLE-- [fill = 0]
-                  0000b718    00000030     driverlib.a : dl_i2c.o (.text.DL_I2C_flushControllerRXFIFO)
-                  0000b748    00000030                 : dl_uart.o (.text.DL_UART_transmitDataBlocking)
-                  0000b778    00000030     stopwatch.o (.text.Stopwatch_getCurrentMs)
-                  0000b7a8    0000002c     angle_turn_control.o (.text.AngleTurnControl_init)
-                  0000b7d4    0000002c     grayscale_sensor.o (.text.Grayscale_Sensor_Init)
-                  0000b800    00000028     car_control.o (.text.CarControl_stop)
-                  0000b828    00000028     libc.a : boot_cortex_m.c.obj (.text:_c_int00_noargs)
-                  0000b850    00000028     libclang_rt.builtins.a : floatunsisf.S.obj (.text)
-                  0000b878    00000026     driverlib.a : dl_i2c.o (.text.DL_I2C_setClockConfig)
-                  0000b89e    00000024     angle_turn_control.o (.text.AngleTurnControl_cancel)
-                  0000b8c2    00000002     --HOLE-- [fill = 0]
-                  0000b8c4    00000024     libclang_rt.builtins.a : muldi3.S.obj (.text)
-                  0000b8e8    00000020     stopwatch.o (.text.Stopwatch_start)
-                  0000b908    00000020     stopwatch.o (.text.Stopwatch_stop)
-                  0000b928    0000001e     car_control.o (.text.CarControl_coast)
-                  0000b946    0000001e     car_control.o (.text.CarControl_emergencyStop)
-                  0000b964    0000001e     motor_control.o (.text.MotorControl_setTargetRpm)
-                  0000b982    00000002     --HOLE-- [fill = 0]
-                  0000b984    0000001e     libclang_rt.builtins.a : ashldi3.S.obj (.text)
-                  0000b9a2    00000002     --HOLE-- [fill = 0]
-                  0000b9a4    0000001c     driverlib.a : dl_timer.o (.text.DL_Timer_setCaptCompUpdateMethod)
-                  0000b9c0    0000001c                 : dl_timer.o (.text.DL_Timer_setClockConfig)
-                  0000b9dc    0000001a     libclang_rt.builtins.a : aeabi_memset.S.obj (.text)
-                  0000b9f6    00000002     --HOLE-- [fill = 0]
-                  0000b9f8    00000018     driverlib.a : dl_timer.o (.text.DL_Timer_setCaptureCompareOutCtl)
-                  0000ba10    00000018     main.o (.text.OLED_showCalibrationProgress)
-                  0000ba28    00000014     main.o (.text.Task1_lineTrackingSetEnabled)
-                  0000ba3c    00000014     libclang_rt.builtins.a : aeabi_ldivmod.S.obj (.text)
-                  0000ba50    00000014                            : aeabi_uldivmod.S.obj (.text)
-                  0000ba64    00000012     driverlib.a : dl_uart.o (.text.DL_UART_setClockConfig)
-                  0000ba76    00000012     libc.a : copy_decompress_none.c.obj (.text:decompress:none)
-                  0000ba88    00000010     driverlib.a : dl_timer.o (.text.DL_Timer_setCaptureCompareValue)
-                  0000ba98    00000010     task_manager.o (.text.TaskManager_takeStatusPressed)
-                  0000baa8    00000010     task_manager.o (.text.TaskManager_takeStatusReleased)
-                  0000bab8    00000010     task_manager.o (.text.TaskManager_taskStartPressed)
-                  0000bac8    00000010     libc.a : copy_zero_init.c.obj (.text:decompress:ZI)
-                  0000bad8    0000000c     mpu6050_angle.o (.text.MPU6050_Angle_getDeviceId)
-                  0000bae4    0000000c     mpu6050_angle.o (.text.MPU6050_Angle_getZDegrees)
-                  0000baf0    0000000c     mpu6050_angle.o (.text.MPU6050_Angle_reset)
-                  0000bafc    0000000c     main.o (.text.Task1_lineTrackingSetSpeed)
-                  0000bb08    0000000c     task_manager.o (.text.TaskManager_getActiveTask)
-                  0000bb14    0000000c     task_manager.o (.text.TaskManager_getTask1Endpoint)
-                  0000bb20    0000000a     driverlib.a : dl_common.o (.text.DL_Common_delayCycles)
-                  0000bb2a    0000000a     task1_control.o (.text.Task1Control_isActive)
-                  0000bb34    00000008     libclang_rt.builtins.a : aeabi_memcpy.S.obj (.text)
-                  0000bb3c    00000006     angle_turn_control.o (.text.AngleTurnControl_isActive)
-                  0000bb42    00000006     car_control.o (.text.CarControl_getSpeedRpm)
-                  0000bb48    00000006     libc.a : exit.c.obj (.text:abort)
-                  0000bb4e    00000004     car_control.o (.text.CarControl_getTurnInnerPercent)
-                  0000bb52    00000004     libsysbm.a : hostexit.c.obj (.text.HOSTexit)
-                  0000bb56    00000004     startup_mspm0g350x_ticlang.o (.text.Reset_Handler)
-                  0000bb5a    00000004     libc.a : pre_init.c.obj (.text._system_pre_init)
-                  0000bb5e    00000002     --HOLE-- [fill = 0]
+.text      0    000000c0    0000b440     
+                  000000c0    00003f68     main.o (.text.Car_processUartCommand)
+                  00004028    00001914     main.o (.text.main)
+                  0000593c    000005d4     main.o (.text.UART_reportMotorStatus)
+                  00005f10    0000056c     oled.o (.text.OLED_ShowStopwatch)
+                  0000647c    000004e0     line_tracking.o (.text.LineTracking_update)
+                  0000695c    00000438     main.o (.text.UART_sendVofaMotorChannels)
+                  00006d94    000003d2     oled.o (.text.OLED_Init)
+                  00007166    00000002     startup_mspm0g350x_ticlang.o (.text.Default_Handler)
+                  00007168    00000348     main.o (.text.Car_setSingleMotorChassisRpm)
+                  000074b0    000002f4     motor_control.o (.text.MotorControl_update)
+                  000077a4    00000278     mpu6050_angle.o (.text.MPU6050_Angle_initWithProgress)
+                  00007a1c    00000274     oled.o (.text.OLED_ShowTask)
+                  00007c90    0000026c     oled.o (.text.OLED_ShowCalibration)
+                  00007efc    00000244     main.o (.text.UART_reportGrayscale)
+                  00008140    00000238     main.o (.text.UART_reportZAngle)
+                  00008378    00000204     lap_task_control.o (.text.LapTaskControl_update)
+                  0000857c    000001ec     task_executor.o (.text.TaskExecutor_update)
+                  00008768    000001e8     main.o (.text.Car_parseAngleTurnParameters)
+                  00008950    000001d4     mpu6050_angle.o (.text.MPU6050_readRegisters)
+                  00008b24    000001ac     oled.o (.text.OLED_writeString)
+                  00008cd0    00000180     grayscale_sensor.o (.text.Grayscale_Sensor_ReadAll)
+                  00008e50    00000160     ti_msp_dl_config.o (.text.SYSCFG_DL_GPIO_init)
+                  00008fb0    00000160     straight_task_control.o (.text.StraightTaskControl_update)
+                  00009110    00000138     car_control.o (.text.CarControl_setMotion)
+                  00009248    00000124     main.o (.text.Car_parseOptionalSignedRpm)
+                  0000936c    00000124     straight_task_control.o (.text.StraightTaskControl_start)
+                  00009490    00000118     task_manager.o (.text.TaskManager_update)
+                  000095a8    00000104     driverlib.a : dl_timer.o (.text.DL_Timer_initFourCCPWMMode)
+                  000096ac    00000104     mpu6050_angle.o (.text.MPU6050_writeRegister)
+                  000097b0    00000104     oled.o (.text.OLED_writeByte)
+                  000098b4    00000100     main.o (.text.UART_sendInt32)
+                  000099b4    000000fc     driverlib.a : dl_timer.o (.text.DL_Timer_initTimerMode)
+                  00009ab0    000000fc     lap_task_control.o (.text.LapTaskControl_start)
+                  00009bac    000000e8     angle_turn_control.o (.text.AngleTurnControl_update)
+                  00009c94    000000d8     libclang_rt.builtins.a : addsf3.S.obj (.text)
+                  00009d6c    000000d4     task_manager.o (.text.TaskManager_init)
+                  00009e40    000000a2     line_tracking.o (.text.LineTracking_readActiveCount)
+                  00009ee2    00000002     libclang_rt.builtins.a : aeabi_div0.c.obj (.text.__aeabi_idiv0)
+                  00009ee4    000000a2                            : udivmoddi4.S.obj (.text)
+                  00009f86    0000009a     libc.a : memcpy16.S.obj (.text:memcpy)
+                  0000a020    00000090     ti_msp_dl_config.o (.text.SYSCFG_DL_PWM_MOTOR_AB_init)
+                  0000a0b0    00000090     ti_msp_dl_config.o (.text.SYSCFG_DL_PWM_MOTOR_CD_init)
+                  0000a140    0000008c     libclang_rt.builtins.a : comparesf2.S.obj (.text)
+                  0000a1cc    0000008c                            : mulsf3.S.obj (.text)
+                  0000a258    0000008a     motor_control.o (.text.MotorControl_takeStatus)
+                  0000a2e2    00000002     libclang_rt.builtins.a : aeabi_div0.c.obj (.text.__aeabi_ldiv0)
+                  0000a2e4    00000088     ti_msp_dl_config.o (.text.SYSCFG_DL_initPower)
+                  0000a36c    00000084     angle_turn_control.o (.text.AngleTurnControl_start)
+                  0000a3f0    00000084     main.o (.text.Car_parseUnsignedValue)
+                  0000a474    00000082     libclang_rt.builtins.a : divsf3.S.obj (.text)
+                  0000a4f6    00000002     --HOLE-- [fill = 0]
+                  0000a4f8    0000007c     libc.a : copy_decompress_lzss.c.obj (.text:decompress:lzss)
+                  0000a574    00000074     main.o (.text.GROUP1_IRQHandler)
+                  0000a5e8    00000070     ti_msp_dl_config.o (.text.SYSCFG_DL_UART_0_init)
+                  0000a658    00000070     ti_msp_dl_config.o (.text.SYSCFG_DL_UART_1_init)
+                  0000a6c8    00000070     ti_msp_dl_config.o (.text.SYSCFG_DL_UART_OPENMV_init)
+                  0000a738    00000070     task_executor.o (.text.TaskExecutor_init)
+                  0000a7a8    00000064     main.o (.text.UART0_IRQHandler)
+                  0000a80c    00000062     libc.a : memset16.S.obj (.text:memset)
+                  0000a86e    00000002     --HOLE-- [fill = 0]
+                  0000a870    00000060     mpu6050_angle.o (.text.MPU6050_Angle_update)
+                  0000a8d0    0000005e     driverlib.a : dl_i2c.o (.text.DL_I2C_fillControllerTXFIFO)
+                  0000a92e    00000002     --HOLE-- [fill = 0]
+                  0000a930    0000005a     libclang_rt.builtins.a : aeabi_fcmp.S.obj (.text)
+                  0000a98a    00000002     --HOLE-- [fill = 0]
+                  0000a98c    00000058     motor_control.o (.text.MotorControl_init)
+                  0000a9e4    00000058     main.o (.text.TIMA1_IRQHandler)
+                  0000aa3c    00000058     main.o (.text.UART1_IRQHandler)
+                  0000aa94    00000056     libclang_rt.builtins.a : aeabi_idivmod.S.obj (.text)
+                  0000aaea    00000002     --HOLE-- [fill = 0]
+                  0000aaec    00000054     ti_msp_dl_config.o (.text.SYSCFG_DL_I2C_MPU6050_init)
+                  0000ab40    00000054     ti_msp_dl_config.o (.text.SYSCFG_DL_I2C_OLED_init)
+                  0000ab94    00000050     ti_msp_dl_config.o (.text.SYSCFG_DL_init)
+                  0000abe4    0000004e     libclang_rt.builtins.a : floatdisf.S.obj (.text)
+                  0000ac32    00000002     --HOLE-- [fill = 0]
+                  0000ac34    0000004c     main.o (.text.UART3_IRQHandler)
+                  0000ac80    00000048     driverlib.a : dl_uart.o (.text.DL_UART_init)
+                  0000acc8    00000040     ti_msp_dl_config.o (.text.SYSCFG_DL_SYSCTL_init)
+                  0000ad08    00000040     main.o (.text.UART_sendString)
+                  0000ad48    00000040     libclang_rt.builtins.a : aeabi_uidivmod.S.obj (.text)
+                  0000ad88    0000003e     car_control.o (.text.CarControl_init)
+                  0000adc6    0000003e     lap_task_control.o (.text.LapTaskControl_init)
+                  0000ae04    0000003e     libclang_rt.builtins.a : divmoddi4.c.obj (.text.__divmoddi4)
+                  0000ae42    00000002     --HOLE-- [fill = 0]
+                  0000ae44    0000003c     driverlib.a : dl_i2c.o (.text.DL_I2C_flushControllerTXFIFO)
+                  0000ae80    0000003c     libc.a : autoinit.c.obj (.text:__TI_auto_init_nobinit_nopinit)
+                  0000aebc    0000003c     libclang_rt.builtins.a : floatsisf.S.obj (.text)
+                  0000aef8    0000003a     motor_control.o (.text.MotorControl_coast)
+                  0000af32    00000002     --HOLE-- [fill = 0]
+                  0000af34    0000003a     libclang_rt.builtins.a : muldsi3.S.obj (.text)
+                  0000af6e    00000002     --HOLE-- [fill = 0]
+                  0000af70    00000038     ti_msp_dl_config.o (.text.SYSCFG_DL_TIMER_PID_init)
+                  0000afa8    00000038     libclang_rt.builtins.a : fixsfsi.S.obj (.text)
+                  0000afe0    00000034     lap_task_control.o (.text.LapTaskControl_reset)
+                  0000b014    00000032     motor_control.o (.text.MotorControl_handleEncoderEdge)
+                  0000b046    00000002     --HOLE-- [fill = 0]
+                  0000b048    00000030     driverlib.a : dl_i2c.o (.text.DL_I2C_flushControllerRXFIFO)
+                  0000b078    00000030                 : dl_uart.o (.text.DL_UART_transmitDataBlocking)
+                  0000b0a8    00000030     stopwatch.o (.text.Stopwatch_getCurrentMs)
+                  0000b0d8    0000002c     angle_turn_control.o (.text.AngleTurnControl_init)
+                  0000b104    0000002c     grayscale_sensor.o (.text.Grayscale_Sensor_Init)
+                  0000b130    00000028     car_control.o (.text.CarControl_stop)
+                  0000b158    00000028     libc.a : boot_cortex_m.c.obj (.text:_c_int00_noargs)
+                  0000b180    00000028     libclang_rt.builtins.a : floatunsisf.S.obj (.text)
+                  0000b1a8    00000026     driverlib.a : dl_i2c.o (.text.DL_I2C_setClockConfig)
+                  0000b1ce    00000024     angle_turn_control.o (.text.AngleTurnControl_cancel)
+                  0000b1f2    00000024     straight_task_control.o (.text.StraightTaskControl_init)
+                  0000b216    00000002     --HOLE-- [fill = 0]
+                  0000b218    00000024     libclang_rt.builtins.a : muldi3.S.obj (.text)
+                  0000b23c    00000022     task_executor.o (.text.TaskExecutor_isRunning)
+                  0000b25e    00000020     line_tracking.o (.text.LineTracking_init)
+                  0000b27e    00000002     --HOLE-- [fill = 0]
+                  0000b280    00000020     stopwatch.o (.text.Stopwatch_start)
+                  0000b2a0    0000001e     car_control.o (.text.CarControl_coast)
+                  0000b2be    0000001e     car_control.o (.text.CarControl_emergencyStop)
+                  0000b2dc    0000001e     motor_control.o (.text.MotorControl_setTargetRpm)
+                  0000b2fa    00000002     --HOLE-- [fill = 0]
+                  0000b2fc    0000001e     libclang_rt.builtins.a : ashldi3.S.obj (.text)
+                  0000b31a    00000002     --HOLE-- [fill = 0]
+                  0000b31c    0000001c     driverlib.a : dl_timer.o (.text.DL_Timer_setCaptCompUpdateMethod)
+                  0000b338    0000001c                 : dl_timer.o (.text.DL_Timer_setClockConfig)
+                  0000b354    0000001a     straight_task_control.o (.text.StraightTaskControl_reset)
+                  0000b36e    0000001a     task_executor.o (.text.TaskExecutor_reset)
+                  0000b388    0000001a     libclang_rt.builtins.a : aeabi_memset.S.obj (.text)
+                  0000b3a2    00000002     --HOLE-- [fill = 0]
+                  0000b3a4    00000018     driverlib.a : dl_timer.o (.text.DL_Timer_setCaptureCompareOutCtl)
+                  0000b3bc    00000018     main.o (.text.OLED_showCalibrationProgress)
+                  0000b3d4    00000014     libclang_rt.builtins.a : aeabi_ldivmod.S.obj (.text)
+                  0000b3e8    00000014                            : aeabi_uldivmod.S.obj (.text)
+                  0000b3fc    00000012     driverlib.a : dl_uart.o (.text.DL_UART_setClockConfig)
+                  0000b40e    00000012     lap_task_control.o (.text.LapTaskControl_isRunning)
+                  0000b420    00000012     libc.a : copy_decompress_none.c.obj (.text:decompress:none)
+                  0000b432    00000002     --HOLE-- [fill = 0]
+                  0000b434    00000010     driverlib.a : dl_timer.o (.text.DL_Timer_setCaptureCompareValue)
+                  0000b444    00000010     line_tracking.o (.text.LineTracking_reset)
+                  0000b454    00000010     straight_task_control.o (.text.StraightTaskControl_isRunning)
+                  0000b464    00000010     task_manager.o (.text.TaskManager_taskStartPressed)
+                  0000b474    00000010     libc.a : copy_zero_init.c.obj (.text:decompress:ZI)
+                  0000b484    0000000c     mpu6050_angle.o (.text.MPU6050_Angle_getDeviceId)
+                  0000b490    0000000c     mpu6050_angle.o (.text.MPU6050_Angle_getZDegrees)
+                  0000b49c    0000000c     mpu6050_angle.o (.text.MPU6050_Angle_reset)
+                  0000b4a8    0000000c     task_manager.o (.text.TaskManager_getActiveTask)
+                  0000b4b4    0000000a     driverlib.a : dl_common.o (.text.DL_Common_delayCycles)
+                  0000b4be    00000002     --HOLE-- [fill = 0]
+                  0000b4c0    00000008     libclang_rt.builtins.a : aeabi_memcpy.S.obj (.text)
+                  0000b4c8    00000006     angle_turn_control.o (.text.AngleTurnControl_isActive)
+                  0000b4ce    00000006     car_control.o (.text.CarControl_getSpeedRpm)
+                  0000b4d4    00000006     line_tracking.o (.text.LineTracking_getSpeed)
+                  0000b4da    00000006     libc.a : exit.c.obj (.text:abort)
+                  0000b4e0    00000004     car_control.o (.text.CarControl_getTurnInnerPercent)
+                  0000b4e4    00000004     libsysbm.a : hostexit.c.obj (.text.HOSTexit)
+                  0000b4e8    00000004     line_tracking.o (.text.LineTracking_isEnabled)
+                  0000b4ec    00000004     line_tracking.o (.text.LineTracking_setDebugEnabled)
+                  0000b4f0    00000004     line_tracking.o (.text.LineTracking_setEnabled)
+                  0000b4f4    00000004     line_tracking.o (.text.LineTracking_setSpeed)
+                  0000b4f8    00000004     startup_mspm0g350x_ticlang.o (.text.Reset_Handler)
+                  0000b4fc    00000004     libc.a : pre_init.c.obj (.text._system_pre_init)
 
-.cinit     0    0000c5b0    00000030     
-                  0000c5b0    0000000c     (__TI_handler_table)
-                  0000c5bc    00000008     (.cinit..bss.load) [load image, compression = zero_init]
-                  0000c5c4    00000008     (.cinit..data.load) [load image, compression = lzss]
-                  0000c5cc    00000010     (__TI_cinit_table)
-                  0000c5dc    00000004     --HOLE-- [fill = 0]
+.cinit     0    0000bf90    00000030     
+                  0000bf90    0000000c     (__TI_handler_table)
+                  0000bf9c    00000008     (.cinit..bss.load) [load image, compression = zero_init]
+                  0000bfa4    00000008     (.cinit..data.load) [load image, compression = lzss]
+                  0000bfac    00000010     (__TI_cinit_table)
+                  0000bfbc    00000004     --HOLE-- [fill = 0]
 
-.rodata    0    0000bb60    00000a50     
-                  0000bb60    00000050     main.o (.rodata.gMotorAConfig)
-                  0000bbb0    00000050     main.o (.rodata.gMotorBConfig)
-                  0000bc00    00000050     main.o (.rodata.gMotorCConfig)
-                  0000bc50    00000050     main.o (.rodata.gMotorDConfig)
-                  0000bca0    00000039     main.o (.rodata.str1.17100691992556644108.1)
-                  0000bcd9    00000036     main.o (.rodata.str1.16856034117330037696.1)
-                  0000bd0f    00000036     main.o (.rodata.str1.4237830143243313753.1)
-                  0000bd45    00000035     main.o (.rodata.str1.5635195992058134992.1)
-                  0000bd7a    00000035     main.o (.rodata.str1.922313780387552641.1)
-                  0000bdaf    00000001     --HOLE-- [fill = 0]
-                  0000bdb0    00000034     main.o (.rodata..L__const.main.taskIo)
-                  0000bde4    00000034     main.o (.rodata.str1.288608917962107522.1)
-                  0000be18    00000032     main.o (.rodata.str1.14402440632258215044.1)
-                  0000be4a    00000031     main.o (.rodata.str1.2256192789054937243.1)
-                  0000be7b    00000031     main.o (.rodata.str1.5456361711443481037.1)
-                  0000beac    0000002f     main.o (.rodata.str1.3060844030163134499.1)
-                  0000bedb    0000002f     main.o (.rodata.str1.9582546670787941090.1)
-                  0000bf0a    0000002e     main.o (.rodata.str1.10753028060609409702.1)
-                  0000bf38    0000002e     main.o (.rodata.str1.8154729771448623357.1)
-                  0000bf66    0000002d     main.o (.rodata.str1.17045314124001216156.1)
-                  0000bf93    0000002b     task1_control.o (.rodata.str1.11647944105263845624.1)
-                  0000bfbe    0000002b     task1_control.o (.rodata.str1.1301023707294879454.1)
-                  0000bfe9    0000002b     main.o (.rodata.str1.7190843550371250464.1)
-                  0000c014    00000029     main.o (.rodata.str1.10992214574315303902.1)
-                  0000c03d    00000029     main.o (.rodata.str1.11822182024223342093.1)
-                  0000c066    00000028     main.o (.rodata.str1.13080826312907008127.1)
-                  0000c08e    00000028     main.o (.rodata.str1.1311392489248731986.1)
-                  0000c0b6    00000028     main.o (.rodata.str1.5630281060179367396.1)
-                  0000c0de    00000028     main.o (.rodata.str1.6689794204546696417.1)
-                  0000c106    00000028     main.o (.rodata.str1.8739739109796348711.1)
-                  0000c12e    00000027     main.o (.rodata.str1.10313062130652730376.1)
-                  0000c155    00000027     main.o (.rodata.str1.13782249893155712474.1)
-                  0000c17c    00000027     main.o (.rodata.str1.5353031162939221829.1)
-                  0000c1a3    00000027     main.o (.rodata.str1.6891813955777630061.1)
-                  0000c1ca    00000026     main.o (.rodata.str1.10003710380724733530.1)
-                  0000c1f0    00000026     main.o (.rodata.str1.13203255162302409502.1)
-                  0000c216    00000026     main.o (.rodata.str1.5043408953494467246.1)
-                  0000c23c    00000025     main.o (.rodata.str1.14032527501195285070.1)
-                  0000c261    00000025     main.o (.rodata.str1.16709704744796600189.1)
-                  0000c286    00000025     main.o (.rodata.str1.729616968063973023.1)
-                  0000c2ab    00000024     main.o (.rodata.str1.11639152155638730617.1)
-                  0000c2cf    00000024     main.o (.rodata.str1.2597068879322958637.1)
-                  0000c2f3    00000024     main.o (.rodata.str1.3530083166107438000.1)
-                  0000c317    00000023     main.o (.rodata.str1.18420373917905513025.1)
-                  0000c33a    00000022     task1_control.o (.rodata.str1.10712477198116260179.1)
-                  0000c35c    00000021     task1_control.o (.rodata.str1.780947688790857278.1)
-                  0000c37d    00000003     ti_msp_dl_config.o (.rodata.gPWM_MOTOR_ABClockConfig)
-                  0000c380    00000020     main.o (.rodata.gAngleTurnConfig)
-                  0000c3a0    00000020     task1_control.o (.rodata.str1.9111940014424574115.1)
-                  0000c3c0    0000001d     task1_control.o (.rodata.str1.17703183304565864469.1)
-                  0000c3dd    0000001d     task1_control.o (.rodata.str1.5673791145989345652.1)
-                  0000c3fa    00000002     ti_msp_dl_config.o (.rodata.gI2C_MPU6050ClockConfig)
-                  0000c3fc    0000001c     main.o (.rodata.gCarConfig)
-                  0000c418    0000001a     task1_control.o (.rodata.str1.16488425795326280447.1)
-                  0000c432    00000016     task1_control.o (.rodata.str1.18066269245873339749.1)
-                  0000c448    00000014     ti_msp_dl_config.o (.rodata.gTIMER_PIDTimerConfig)
-                  0000c45c    00000014     task1_control.o (.rodata.str1.1119584794306885221.1)
-                  0000c470    00000013     main.o (.rodata.str1.6976963560179378225.1)
-                  0000c483    00000013     task1_control.o (.rodata.str1.7414329305395923872.1)
-                  0000c496    00000012     main.o (.rodata.str1.17770841602246103764.1)
-                  0000c4a8    00000011     main.o (.rodata.str1.887240019932590441.1)
-                  0000c4b9    00000003     ti_msp_dl_config.o (.rodata.gPWM_MOTOR_CDClockConfig)
-                  0000c4bc    00000010     main.o (.rodata..Lswitch.table.main.123)
-                  0000c4cc    0000000e     main.o (.rodata.str1.15159059442110792349.1)
-                  0000c4da    0000000b     main.o (.rodata.str1.13030671760666898970.1)
-                  0000c4e5    0000000b     main.o (.rodata.str1.403738606202455663.1)
-                  0000c4f0    0000000a     ti_msp_dl_config.o (.rodata.gUART_0Config)
-                  0000c4fa    0000000a     ti_msp_dl_config.o (.rodata.gUART_1Config)
-                  0000c504    0000000a     ti_msp_dl_config.o (.rodata.gUART_OPENMVConfig)
-                  0000c50e    00000008     main.o (.rodata.cst8)
-                  0000c516    00000002     ti_msp_dl_config.o (.rodata.gI2C_OLEDClockConfig)
-                  0000c518    00000008     ti_msp_dl_config.o (.rodata.gPWM_MOTOR_ABConfig)
-                  0000c520    00000008     ti_msp_dl_config.o (.rodata.gPWM_MOTOR_CDConfig)
-                  0000c528    00000005     oled.o (.rodata.OLED_getGlyph.A)
-                  0000c52d    00000005     oled.o (.rodata.OLED_getGlyph.C)
-                  0000c532    00000005     oled.o (.rodata.OLED_getGlyph.D)
-                  0000c537    00000005     oled.o (.rodata.OLED_getGlyph.E)
-                  0000c53c    00000005     oled.o (.rodata.OLED_getGlyph.K)
-                  0000c541    00000005     oled.o (.rodata.OLED_getGlyph.L)
-                  0000c546    00000005     oled.o (.rodata.OLED_getGlyph.N)
-                  0000c54b    00000005     oled.o (.rodata.OLED_getGlyph.O)
-                  0000c550    00000005     oled.o (.rodata.OLED_getGlyph.R)
-                  0000c555    00000005     oled.o (.rodata.OLED_getGlyph.S)
-                  0000c55a    00000005     oled.o (.rodata.OLED_getGlyph.T)
-                  0000c55f    00000005     oled.o (.rodata.OLED_getGlyph.U)
-                  0000c564    00000005     oled.o (.rodata.OLED_getGlyph.eight)
-                  0000c569    00000005     oled.o (.rodata.OLED_getGlyph.five)
-                  0000c56e    00000005     oled.o (.rodata.OLED_getGlyph.four)
-                  0000c573    00000005     oled.o (.rodata.OLED_getGlyph.nine)
-                  0000c578    00000005     oled.o (.rodata.OLED_getGlyph.one)
-                  0000c57d    00000005     oled.o (.rodata.OLED_getGlyph.seven)
-                  0000c582    00000005     oled.o (.rodata.OLED_getGlyph.six)
-                  0000c587    00000005     oled.o (.rodata.OLED_getGlyph.space)
-                  0000c58c    00000005     oled.o (.rodata.OLED_getGlyph.three)
-                  0000c591    00000005     oled.o (.rodata.OLED_getGlyph.two)
-                  0000c596    00000005     oled.o (.rodata.OLED_getGlyph.zero)
-                  0000c59b    00000004     main.o (.rodata.str1.10720410773482754683.1)
-                  0000c59f    00000004     main.o (.rodata.str1.10865113624938808685.1)
-                  0000c5a3    00000003     ti_msp_dl_config.o (.rodata.gTIMER_PIDClockConfig)
-                  0000c5a6    00000002     ti_msp_dl_config.o (.rodata.gUART_0ClockConfig)
-                  0000c5a8    00000002     ti_msp_dl_config.o (.rodata.gUART_1ClockConfig)
-                  0000c5aa    00000002     ti_msp_dl_config.o (.rodata.gUART_OPENMVClockConfig)
-                  0000c5ac    00000004     --HOLE-- [fill = 0]
+.rodata    0    0000b500    00000a90     
+                  0000b500    00000050     main.o (.rodata.gMotorAConfig)
+                  0000b550    00000050     main.o (.rodata.gMotorBConfig)
+                  0000b5a0    00000050     main.o (.rodata.gMotorCConfig)
+                  0000b5f0    00000050     main.o (.rodata.gMotorDConfig)
+                  0000b640    00000039     main.o (.rodata.str1.17100691992556644108.1)
+                  0000b679    00000036     main.o (.rodata.str1.1499083853040407199.1)
+                  0000b6af    00000036     main.o (.rodata.str1.7190843550371250464.1)
+                  0000b6e5    00000035     main.o (.rodata.str1.8739739109796348711.1)
+                  0000b71a    00000035     main.o (.rodata.str1.9582546670787941090.1)
+                  0000b74f    00000034     main.o (.rodata.str1.288608917962107522.1)
+                  0000b783    00000032     main.o (.rodata.str1.14402440632258215044.1)
+                  0000b7b5    00000031     main.o (.rodata.str1.18420373917905513025.1)
+                  0000b7e6    00000031     main.o (.rodata.str1.489408286258209761.1)
+                  0000b817    0000002f     main.o (.rodata.str1.2117079376983516436.1)
+                  0000b846    0000002f     main.o (.rodata.str1.5635195992058134992.1)
+                  0000b875    0000002e     main.o (.rodata.str1.2256192789054937243.1)
+                  0000b8a3    0000002e     main.o (.rodata.str1.8154729771448623357.1)
+                  0000b8d1    0000002d     main.o (.rodata.str1.2563708670032483588.1)
+                  0000b8fe    0000002b     main.o (.rodata.str1.5456361711443481037.1)
+                  0000b929    00000029     main.o (.rodata.str1.10224226614597680209.1)
+                  0000b952    00000029     main.o (.rodata.str1.3306105329219470413.1)
+                  0000b97b    00000028     main.o (.rodata.str1.11777244287787065045.1)
+                  0000b9a3    00000028     main.o (.rodata.str1.1311392489248731986.1)
+                  0000b9cb    00000028     main.o (.rodata.str1.13959864503700487862.1)
+                  0000b9f3    00000028     main.o (.rodata.str1.5130420776781151933.1)
+                  0000ba1b    00000028     main.o (.rodata.str1.922313780387552641.1)
+                  0000ba43    00000027     main.o (.rodata.str1.10313062130652730376.1)
+                  0000ba6a    00000027     main.o (.rodata.str1.13782249893155712474.1)
+                  0000ba91    00000027     main.o (.rodata.str1.6891813955777630061.1)
+                  0000bab8    00000027     main.o (.rodata.str1.9060162316564048117.1)
+                  0000badf    00000026     main.o (.rodata.str1.2182841224059738574.1)
+                  0000bb05    00000026     main.o (.rodata.str1.6689794204546696417.1)
+                  0000bb2b    00000026     main.o (.rodata.str1.8320541211001259012.1)
+                  0000bb51    00000025     main.o (.rodata.str1.11639152155638730617.1)
+                  0000bb76    00000025     main.o (.rodata.str1.3292798375424520613.1)
+                  0000bb9b    00000025     straight_task_control.o (.rodata.str1.446793766109262494.1)
+                  0000bbc0    00000025     main.o (.rodata.str1.5630281060179367396.1)
+                  0000bbe5    00000025     lap_task_control.o (.rodata.str1.6200913312131411637.1)
+                  0000bc0a    00000024     main.o (.rodata.str1.10992214574315303902.1)
+                  0000bc2e    00000024     main.o (.rodata.str1.3530083166107438000.1)
+                  0000bc52    00000024     main.o (.rodata.str1.6976963560179378225.1)
+                  0000bc76    00000023     main.o (.rodata.str1.13455639105384664542.1)
+                  0000bc99    00000022     task_executor.o (.rodata.str1.240158867509335437.1)
+                  0000bcbb    00000021     lap_task_control.o (.rodata.str1.2413759701585431130.1)
+                  0000bcdc    00000020     main.o (.rodata.gAngleTurnConfig)
+                  0000bcfc    0000001f     straight_task_control.o (.rodata.str1.7040808863327155277.1)
+                  0000bd1b    0000001e     task_executor.o (.rodata.str1.13736124676361268097.1)
+                  0000bd39    0000001e     straight_task_control.o (.rodata.str1.5111848593538277940.1)
+                  0000bd57    00000001     --HOLE-- [fill = 0]
+                  0000bd58    0000001c     main.o (.rodata.gCarConfig)
+                  0000bd74    00000019     lap_task_control.o (.rodata.str1.14284397962649984076.1)
+                  0000bd8d    00000017     task_executor.o (.rodata.str1.1157049911250168747.1)
+                  0000bda4    00000015     straight_task_control.o (.rodata.str1.7716800775287680474.1)
+                  0000bdb9    00000003     ti_msp_dl_config.o (.rodata.gPWM_MOTOR_ABClockConfig)
+                  0000bdbc    00000014     ti_msp_dl_config.o (.rodata.gTIMER_PIDTimerConfig)
+                  0000bdd0    00000013     main.o (.rodata.str1.17770841602246103764.1)
+                  0000bde3    00000013     lap_task_control.o (.rodata.str1.5950128082404191651.1)
+                  0000bdf6    00000012     task_profiles.o (.rodata.gLapTask2Profile)
+                  0000be08    00000012     task_profiles.o (.rodata.gLapTask5Profile)
+                  0000be1a    00000012     task_profiles.o (.rodata.gLapTask6Profile)
+                  0000be2c    00000012     main.o (.rodata.str1.8428454045432808059.1)
+                  0000be3e    00000011     main.o (.rodata.str1.887240019932590441.1)
+                  0000be4f    00000001     --HOLE-- [fill = 0]
+                  0000be50    00000010     main.o (.rodata..Lswitch.table.Car_setSingleMotorChassisRpm.122)
+                  0000be60    00000010     task_profiles.o (.rodata.gStraightTask4Profile)
+                  0000be70    00000010     lap_task_control.o (.rodata.str1.4144015826523412668.1)
+                  0000be80    0000000e     main.o (.rodata.str1.15159059442110792349.1)
+                  0000be8e    0000000e     lap_task_control.o (.rodata.str1.15839785750238877193.1)
+                  0000be9c    0000000c     main.o (.rodata..L__const.main.lineTrackingConfig)
+                  0000bea8    0000000b     main.o (.rodata.str1.13030671760666898970.1)
+                  0000beb3    0000000b     main.o (.rodata.str1.39260288392874984.1)
+                  0000bebe    0000000a     ti_msp_dl_config.o (.rodata.gUART_0Config)
+                  0000bec8    0000000a     ti_msp_dl_config.o (.rodata.gUART_1Config)
+                  0000bed2    0000000a     ti_msp_dl_config.o (.rodata.gUART_OPENMVConfig)
+                  0000bedc    00000008     main.o (.rodata.cst8)
+                  0000bee4    00000008     ti_msp_dl_config.o (.rodata.gPWM_MOTOR_ABConfig)
+                  0000beec    00000008     ti_msp_dl_config.o (.rodata.gPWM_MOTOR_CDConfig)
+                  0000bef4    00000006     line_tracking.o (.rodata.str1.11697046603888022051.1)
+                  0000befa    00000005     oled.o (.rodata.OLED_getGlyph.A)
+                  0000beff    00000005     oled.o (.rodata.OLED_getGlyph.C)
+                  0000bf04    00000005     oled.o (.rodata.OLED_getGlyph.D)
+                  0000bf09    00000005     oled.o (.rodata.OLED_getGlyph.E)
+                  0000bf0e    00000005     oled.o (.rodata.OLED_getGlyph.K)
+                  0000bf13    00000005     oled.o (.rodata.OLED_getGlyph.L)
+                  0000bf18    00000005     oled.o (.rodata.OLED_getGlyph.N)
+                  0000bf1d    00000005     oled.o (.rodata.OLED_getGlyph.O)
+                  0000bf22    00000005     oled.o (.rodata.OLED_getGlyph.R)
+                  0000bf27    00000005     oled.o (.rodata.OLED_getGlyph.S)
+                  0000bf2c    00000005     oled.o (.rodata.OLED_getGlyph.T)
+                  0000bf31    00000005     oled.o (.rodata.OLED_getGlyph.U)
+                  0000bf36    00000005     oled.o (.rodata.OLED_getGlyph.eight)
+                  0000bf3b    00000005     oled.o (.rodata.OLED_getGlyph.five)
+                  0000bf40    00000005     oled.o (.rodata.OLED_getGlyph.four)
+                  0000bf45    00000005     oled.o (.rodata.OLED_getGlyph.nine)
+                  0000bf4a    00000005     oled.o (.rodata.OLED_getGlyph.one)
+                  0000bf4f    00000005     oled.o (.rodata.OLED_getGlyph.seven)
+                  0000bf54    00000005     oled.o (.rodata.OLED_getGlyph.six)
+                  0000bf59    00000005     oled.o (.rodata.OLED_getGlyph.space)
+                  0000bf5e    00000005     oled.o (.rodata.OLED_getGlyph.three)
+                  0000bf63    00000005     oled.o (.rodata.OLED_getGlyph.two)
+                  0000bf68    00000005     oled.o (.rodata.OLED_getGlyph.zero)
+                  0000bf6d    00000004     main.o (.rodata.str1.10720410773482754683.1)
+                  0000bf71    00000004     main.o (.rodata.str1.2624144126699937905.1)
+                  0000bf75    00000003     ti_msp_dl_config.o (.rodata.gPWM_MOTOR_CDClockConfig)
+                  0000bf78    00000003     ti_msp_dl_config.o (.rodata.gTIMER_PIDClockConfig)
+                  0000bf7b    00000003     line_tracking.o (.rodata.str1.1693154617505176771.1)
+                  0000bf7e    00000002     ti_msp_dl_config.o (.rodata.gI2C_MPU6050ClockConfig)
+                  0000bf80    00000002     ti_msp_dl_config.o (.rodata.gI2C_OLEDClockConfig)
+                  0000bf82    00000002     ti_msp_dl_config.o (.rodata.gUART_0ClockConfig)
+                  0000bf84    00000002     ti_msp_dl_config.o (.rodata.gUART_1ClockConfig)
+                  0000bf86    00000002     ti_msp_dl_config.o (.rodata.gUART_OPENMVClockConfig)
+                  0000bf88    00000002     line_tracking.o (.rodata.str1.5293172173144075206.1)
+                  0000bf8a    00000006     --HOLE-- [fill = 0]
 
 .init_array 
 *          0    00000000    00000000     UNINITIALIZED
 
 .binit     0    00000000    00000000     
 
-.bss       0    20200000    00000600     UNINITIALIZED
+.bss       0    20200000    0000064f     UNINITIALIZED
                   20200000    000000bc     (.common:gPWM_MOTOR_CDBackup)
                   202000bc    000000bc     (.common:gTIMER_PIDBackup)
-                  20200178    00000080     main.o (.bss.gUart3ForwardRxBuffer)
-                  202001f8    00000080     main.o (.bss.gUartCommand)
-                  20200278    00000078     main.o (.bss.gMotorA)
-                  202002f0    00000078     main.o (.bss.gMotorB)
-                  20200368    00000078     main.o (.bss.gMotorC)
-                  202003e0    00000078     main.o (.bss.gMotorD)
-                  20200458    00000050     main.o (.bss.gTask1Control)
-                  202004a8    00000040     main.o (.bss.gOpenMvDebugRxBuffer)
-                  202004e8    00000034     main.o (.bss.gAngleTurn)
-                  2020051c    00000030     (.common:gUART_1Backup)
-                  2020054c    00000020     main.o (.bss.gCar)
-                  2020056c    00000010     main.o (.bss.UART_serviceMotorStatus.motorAStatus)
-                  2020057c    00000010     main.o (.bss.UART_serviceMotorStatus.motorBStatus)
-                  2020058c    00000010     main.o (.bss.UART_serviceMotorStatus.motorCStatus)
-                  2020059c    00000010     main.o (.bss.UART_serviceMotorStatus.motorDStatus)
-                  202005ac    00000004     mpu6050_angle.o (.bss.gGyroZBiasRaw)
-                  202005b0    00000008     main.o (.bss.gLineFilteredValues)
-                  202005b8    00000008     main.o (.bss.gLinePendingCount)
-                  202005c0    00000008     main.o (.bss.gLinePendingValues)
-                  202005c8    00000004     main.o (.bss.gLineTrackingIntegral)
-                  202005cc    00000004     mpu6050_angle.o (.bss.gZAngleDegrees)
-                  202005d0    00000004     mpu6050_angle.o (.bss.gZRateDps)
-                  202005d4    00000002     main.o (.bss.gLineTrackingBaseSpeedRpm)
-                  202005d6    00000002     main.o (.bss.gLineTrackingLastErr)
-                  202005d8    00000001     main.o (.bss.UART_serviceMotorStatus.motorAStatusReady)
-                  202005d9    00000001     main.o (.bss.UART_serviceMotorStatus.motorBStatusReady)
-                  202005da    00000001     main.o (.bss.UART_serviceMotorStatus.motorCStatusReady)
-                  202005db    00000001     main.o (.bss.UART_serviceMotorStatus.motorDStatusReady)
-                  202005dc    00000001     task_manager.o (.bss.gActiveTask)
-                  202005dd    00000001     mpu6050_angle.o (.bss.gDeviceId)
-                  202005de    00000001     main.o (.bss.gGrayscaleStreamDivider)
-                  202005df    00000001     main.o (.bss.gGrayscaleStreamEnabled)
-                  202005e0    00000001     main.o (.bss.gLineFilterReady)
-                  202005e1    00000001     main.o (.bss.gLineTrackingDebugDivider)
-                  202005e2    00000001     main.o (.bss.gLineTrackingDebugEnabled)
-                  202005e3    00000001     main.o (.bss.gLineTrackingEnabled)
-                  202005e4    00000001     main.o (.bss.gMotorStatusReportOnce)
-                  202005e5    00000001     main.o (.bss.gMotorStatusStreamEnabled)
-                  202005e6    00000001     main.o (.bss.gMpu6050Ready)
-                  202005e7    00000001     main.o (.bss.gMpu6050SampleDue)
-                  202005e8    00000001     main.o (.bss.gOledReady)
-                  202005e9    00000001     task_manager.o (.bss.gOledReady)
-                  202005ea    00000001     main.o (.bss.gOpenMvDebugEnabled)
-                  202005eb    00000001     main.o (.bss.gOpenMvDebugRxHead)
-                  202005ec    00000001     main.o (.bss.gOpenMvDebugRxOverflow)
-                  202005ed    00000001     main.o (.bss.gOpenMvDebugRxTail)
-                  202005ee    00000001     task_manager.o (.bss.gStatusButton.0)
-                  202005ef    00000001     task_manager.o (.bss.gStatusButton.1)
-                  202005f0    00000001     task_manager.o (.bss.gStatusButton.2)
-                  202005f1    00000001     task_manager.o (.bss.gStatusPressPending)
-                  202005f2    00000001     task_manager.o (.bss.gStatusReleasePending)
-                  202005f3    00000001     task_manager.o (.bss.gTask1Endpoint)
-                  202005f4    00000001     task_manager.o (.bss.gTaskButton.0)
-                  202005f5    00000001     task_manager.o (.bss.gTaskButton.1)
-                  202005f6    00000001     task_manager.o (.bss.gTaskButton.2)
-                  202005f7    00000001     task_manager.o (.bss.gTaskStartButton.0)
-                  202005f8    00000001     task_manager.o (.bss.gTaskStartButton.1)
-                  202005f9    00000001     task_manager.o (.bss.gTaskStartButton.2)
-                  202005fa    00000001     task_manager.o (.bss.gTaskStartPressPending)
-                  202005fb    00000001     main.o (.bss.gUart3ForwardRxHead)
-                  202005fc    00000001     main.o (.bss.gUart3ForwardRxOverflow)
-                  202005fd    00000001     main.o (.bss.gUart3ForwardRxTail)
-                  202005fe    00000001     main.o (.bss.gUartCommandLength)
-                  202005ff    00000001     main.o (.bss.gUartCommandReady)
+                  20200178    00000090     main.o (.bss.gTaskExecutor)
+                  20200208    00000080     main.o (.bss.gUart3ForwardRxBuffer)
+                  20200288    00000080     main.o (.bss.gUartCommand)
+                  20200308    00000078     main.o (.bss.gMotorA)
+                  20200380    00000078     main.o (.bss.gMotorB)
+                  202003f8    00000078     main.o (.bss.gMotorC)
+                  20200470    00000078     main.o (.bss.gMotorD)
+                  202004e8    00000040     main.o (.bss.gOpenMvDebugRxBuffer)
+                  20200528    00000034     main.o (.bss.gAngleTurn)
+                  2020055c    00000034     main.o (.bss.gLineTracking)
+                  20200590    00000030     (.common:gUART_1Backup)
+                  202005c0    00000020     main.o (.bss.gCar)
+                  202005e0    00000010     main.o (.bss.UART_serviceMotorStatus.motorAStatus)
+                  202005f0    00000010     main.o (.bss.UART_serviceMotorStatus.motorBStatus)
+                  20200600    00000010     main.o (.bss.UART_serviceMotorStatus.motorCStatus)
+                  20200610    00000010     main.o (.bss.UART_serviceMotorStatus.motorDStatus)
+                  20200620    00000004     mpu6050_angle.o (.bss.gGyroZBiasRaw)
+                  20200624    00000004     mpu6050_angle.o (.bss.gZAngleDegrees)
+                  20200628    00000004     mpu6050_angle.o (.bss.gZRateDps)
+                  2020062c    00000001     main.o (.bss.UART_serviceMotorStatus.motorAStatusReady)
+                  2020062d    00000001     main.o (.bss.UART_serviceMotorStatus.motorBStatusReady)
+                  2020062e    00000001     main.o (.bss.UART_serviceMotorStatus.motorCStatusReady)
+                  2020062f    00000001     main.o (.bss.UART_serviceMotorStatus.motorDStatusReady)
+                  20200630    00000001     task_manager.o (.bss.gActiveTask)
+                  20200631    00000001     mpu6050_angle.o (.bss.gDeviceId)
+                  20200632    00000001     main.o (.bss.gGrayscaleStreamDivider)
+                  20200633    00000001     main.o (.bss.gGrayscaleStreamEnabled)
+                  20200634    00000001     main.o (.bss.gMotorStatusReportOnce)
+                  20200635    00000001     main.o (.bss.gMotorStatusStreamEnabled)
+                  20200636    00000001     main.o (.bss.gMpu6050Ready)
+                  20200637    00000001     main.o (.bss.gMpu6050SampleDue)
+                  20200638    00000001     main.o (.bss.gOledReady)
+                  20200639    00000001     task_manager.o (.bss.gOledReady)
+                  2020063a    00000001     main.o (.bss.gOpenMvDebugEnabled)
+                  2020063b    00000001     main.o (.bss.gOpenMvDebugRxHead)
+                  2020063c    00000001     main.o (.bss.gOpenMvDebugRxOverflow)
+                  2020063d    00000001     main.o (.bss.gOpenMvDebugRxTail)
+                  2020063e    00000001     task_manager.o (.bss.gStatusButton.0)
+                  2020063f    00000001     task_manager.o (.bss.gStatusButton.1)
+                  20200640    00000001     task_manager.o (.bss.gStatusButton.2)
+                  20200641    00000001     task_manager.o (.bss.gStatusPressPending)
+                  20200642    00000001     task_manager.o (.bss.gStatusReleasePending)
+                  20200643    00000001     task_manager.o (.bss.gTaskButton.0)
+                  20200644    00000001     task_manager.o (.bss.gTaskButton.1)
+                  20200645    00000001     task_manager.o (.bss.gTaskButton.2)
+                  20200646    00000001     task_manager.o (.bss.gTaskStartButton.0)
+                  20200647    00000001     task_manager.o (.bss.gTaskStartButton.1)
+                  20200648    00000001     task_manager.o (.bss.gTaskStartButton.2)
+                  20200649    00000001     task_manager.o (.bss.gTaskStartPressPending)
+                  2020064a    00000001     main.o (.bss.gUart3ForwardRxHead)
+                  2020064b    00000001     main.o (.bss.gUart3ForwardRxOverflow)
+                  2020064c    00000001     main.o (.bss.gUart3ForwardRxTail)
+                  2020064d    00000001     main.o (.bss.gUartCommandLength)
+                  2020064e    00000001     main.o (.bss.gUartCommandReady)
 
-.data      0    20200600    00000019     UNINITIALIZED
-                  20200600    00000008     stopwatch.o (.data.startSystick)
-                  20200608    00000008     stopwatch.o (.data.stopSystick)
-                  20200610    00000008     main.o (.data.systick_ms)
-                  20200618    00000001     stopwatch.o (.data.isEnabled)
+.data      0    20200650    00000019     UNINITIALIZED
+                  20200650    00000008     stopwatch.o (.data.startSystick)
+                  20200658    00000008     stopwatch.o (.data.stopSystick)
+                  20200660    00000008     main.o (.data.systick_ms)
+                  20200668    00000001     stopwatch.o (.data.isEnabled)
 
 .stack     0    20207e00    00000200     UNINITIALIZED
                   20207e00    00000004     libc.a : boot_cortex_m.c.obj (.stack)
@@ -388,20 +406,24 @@ MODULE SUMMARY
        Module                         code    ro data   rw data
        ------                         ----    -------   -------
     .\
-       main.o                         32514   2105      1092   
-       oled.o                         4950    115       0      
+       main.o                         28936   2065      1172   
+       oled.o                         4302    115       0      
        ti_msp_dl_config.o             1480    85        424    
        mpu6050_angle.o                1492    0         13     
-       task1_control.o                1094    330       0      
+       line_tracking.o                1480    11        0      
        motor_control.o                1120    0         0      
-       task_manager.o                 572     0         15     
+       lap_task_control.o             900     144       0      
+       straight_task_control.o        722     119       0      
+       task_executor.o                664     87        0      
+       task_manager.o                 520     0         14     
        car_control.o                  484     0         0      
        angle_turn_control.o           450     0         0      
        grayscale_sensor.o             428     0         0      
        startup_mspm0g350x_ticlang.o   6       192       0      
-       stopwatch.o                    112     0         17     
+       stopwatch.o                    80      0         17     
+       task_profiles.o                0       70        0      
     +--+------------------------------+-------+---------+---------+
-       Total:                         44702   2827      1561   
+       Total:                         43064   2888      1640   
                                                                
     E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/lib/ticlang/m0p/mspm0g1x0x_g3x0x/driverlib.a
        dl_timer.o                     608     0         0      
@@ -457,19 +479,19 @@ MODULE SUMMARY
        Stack:                         0       0         512    
        Linker Generated:              0       44        0      
     +--+------------------------------+-------+---------+---------+
-       Grand Total:                   47748   2871      2073   
+       Grand Total:                   46110   2932      2152   
 
 
 LINKER GENERATED COPY TABLES
 
-__TI_cinit_table @ 0000c5cc records: 2, size/record: 8, table size: 16
-	.bss: load addr=0000c5bc, load size=00000008 bytes, run addr=20200000, run size=00000600 bytes, compression=zero_init
-	.data: load addr=0000c5c4, load size=00000008 bytes, run addr=20200600, run size=00000019 bytes, compression=lzss
+__TI_cinit_table @ 0000bfac records: 2, size/record: 8, table size: 16
+	.bss: load addr=0000bf9c, load size=00000008 bytes, run addr=20200000, run size=0000064f bytes, compression=zero_init
+	.data: load addr=0000bfa4, load size=00000008 bytes, run addr=20200650, run size=00000019 bytes, compression=lzss
 
 
 LINKER GENERATED HANDLER TABLE
 
-__TI_handler_table @ 0000c5b0 records: 3, size/record: 4, table size: 12
+__TI_handler_table @ 0000bf90 records: 3, size/record: 4, table size: 12
 	index: 0, handler: __TI_decompress_lzss
 	index: 1, handler: __TI_decompress_none
 	index: 2, handler: __TI_zero_init
@@ -479,109 +501,123 @@ GLOBAL SYMBOLS: SORTED ALPHABETICALLY BY Name
 
 address   name                            
 -------   ----                            
-0000831b  ADC0_IRQHandler                 
-0000831b  ADC1_IRQHandler                 
-0000831b  AES_IRQHandler                  
-0000b89f  AngleTurnControl_cancel         
-0000b7a9  AngleTurnControl_init           
-0000bb3d  AngleTurnControl_isActive       
-0000aa55  AngleTurnControl_start          
-0000a28d  AngleTurnControl_update         
-0000bb52  C$$EXIT                         
-0000831b  CANFD0_IRQHandler               
-0000b929  CarControl_coast                
-0000b947  CarControl_emergencyStop        
-0000bb43  CarControl_getSpeedRpm          
-0000bb4f  CarControl_getTurnInnerPercent  
-0000b4cd  CarControl_init                 
-00009c35  CarControl_setMotion            
-0000b801  CarControl_stop                 
-0000831b  DAC0_IRQHandler                 
-0000bb21  DL_Common_delayCycles           
-0000af41  DL_I2C_fillControllerTXFIFO     
-0000b719  DL_I2C_flushControllerRXFIFO    
-0000b549  DL_I2C_flushControllerTXFIFO    
-0000b879  DL_I2C_setClockConfig           
-00009e85  DL_Timer_initFourCCPWMMode      
-0000a191  DL_Timer_initTimerMode          
-0000b9a5  DL_Timer_setCaptCompUpdateMethod
-0000b9f9  DL_Timer_setCaptureCompareOutCtl
-0000ba89  DL_Timer_setCaptureCompareValue 
-0000b9c1  DL_Timer_setClockConfig         
-0000b341  DL_UART_init                    
-0000ba65  DL_UART_setClockConfig          
-0000b749  DL_UART_transmitDataBlocking    
-0000831b  DMA_IRQHandler                  
-0000831b  Default_Handler                 
-0000831b  GROUP0_IRQHandler               
-0000ac55  GROUP1_IRQHandler               
-0000b7d5  Grayscale_Sensor_Init           
-00009955  Grayscale_Sensor_ReadAll        
-0000bb53  HOSTexit                        
-0000831b  HardFault_Handler               
-0000831b  I2C0_IRQHandler                 
-0000831b  I2C1_IRQHandler                 
-0000bad9  MPU6050_Angle_getDeviceId       
-0000bae5  MPU6050_Angle_getZDegrees       
-00008c3d  MPU6050_Angle_initWithProgress  
-0000baf1  MPU6050_Angle_reset             
-0000aee1  MPU6050_Angle_update            
-0000b5fd  MotorControl_coast              
-0000b6e5  MotorControl_handleEncoderEdge  
-0000affd  MotorControl_init               
-0000b965  MotorControl_setTargetRpm       
-0000a941  MotorControl_takeStatus         
-000086c9  MotorControl_update             
-0000831b  NMI_Handler                     
-00007f49  OLED_Init                       
-0000912d  OLED_ShowCalibration            
-000075a5  OLED_ShowStopwatch              
-00008eb5  OLED_ShowTask                   
-000089bd  OLED_ShowTask1Endpoint          
-0000831b  PendSV_Handler                  
-0000831b  RTC_IRQHandler                  
-0000bb57  Reset_Handler                   
-0000831b  SPI0_IRQHandler                 
-0000831b  SPI1_IRQHandler                 
-0000831b  SVC_Handler                     
-00009ad5  SYSCFG_DL_GPIO_init             
-0000b15d  SYSCFG_DL_I2C_MPU6050_init      
-0000b1b1  SYSCFG_DL_I2C_OLED_init         
-0000a709  SYSCFG_DL_PWM_MOTOR_AB_init     
-0000a799  SYSCFG_DL_PWM_MOTOR_CD_init     
-0000b3cd  SYSCFG_DL_SYSCTL_init           
-0000b675  SYSCFG_DL_TIMER_PID_init        
-0000acc9  SYSCFG_DL_UART_0_init           
-0000ad39  SYSCFG_DL_UART_1_init           
-0000ada9  SYSCFG_DL_UART_OPENMV_init      
-0000b205  SYSCFG_DL_init                  
-0000a9cd  SYSCFG_DL_initPower             
-0000b779  Stopwatch_getCurrentMs          
-0000b8e9  Stopwatch_start                 
-0000b909  Stopwatch_stop                  
-0000831b  SysTick_Handler                 
-0000831b  TIMA0_IRQHandler                
-0000b055  TIMA1_IRQHandler                
-0000831b  TIMG0_IRQHandler                
-0000831b  TIMG12_IRQHandler               
-0000831b  TIMG6_IRQHandler                
-0000831b  TIMG7_IRQHandler                
-0000831b  TIMG8_IRQHandler                
-0000b255  Task1Control_init               
-0000bb2b  Task1Control_isActive           
-0000b40d  Task1Control_reset              
-0000831d  Task1Control_update             
-0000bb09  TaskManager_getActiveTask       
-0000bb15  TaskManager_getTask1Endpoint    
-0000a375  TaskManager_init                
-0000ba99  TaskManager_takeStatusPressed   
-0000baa9  TaskManager_takeStatusReleased  
-0000bab9  TaskManager_taskStartPressed    
-00009d6d  TaskManager_update              
-0000ae19  UART0_IRQHandler                
-0000b0ad  UART1_IRQHandler                
-0000831b  UART2_IRQHandler                
-0000b2f5  UART3_IRQHandler                
+00007167  ADC0_IRQHandler                 
+00007167  ADC1_IRQHandler                 
+00007167  AES_IRQHandler                  
+0000b1cf  AngleTurnControl_cancel         
+0000b0d9  AngleTurnControl_init           
+0000b4c9  AngleTurnControl_isActive       
+0000a36d  AngleTurnControl_start          
+00009bad  AngleTurnControl_update         
+0000b4e4  C$$EXIT                         
+00007167  CANFD0_IRQHandler               
+0000b2a1  CarControl_coast                
+0000b2bf  CarControl_emergencyStop        
+0000b4cf  CarControl_getSpeedRpm          
+0000b4e1  CarControl_getTurnInnerPercent  
+0000ad89  CarControl_init                 
+00009111  CarControl_setMotion            
+0000b131  CarControl_stop                 
+00007167  DAC0_IRQHandler                 
+0000b4b5  DL_Common_delayCycles           
+0000a8d1  DL_I2C_fillControllerTXFIFO     
+0000b049  DL_I2C_flushControllerRXFIFO    
+0000ae45  DL_I2C_flushControllerTXFIFO    
+0000b1a9  DL_I2C_setClockConfig           
+000095a9  DL_Timer_initFourCCPWMMode      
+000099b5  DL_Timer_initTimerMode          
+0000b31d  DL_Timer_setCaptCompUpdateMethod
+0000b3a5  DL_Timer_setCaptureCompareOutCtl
+0000b435  DL_Timer_setCaptureCompareValue 
+0000b339  DL_Timer_setClockConfig         
+0000ac81  DL_UART_init                    
+0000b3fd  DL_UART_setClockConfig          
+0000b079  DL_UART_transmitDataBlocking    
+00007167  DMA_IRQHandler                  
+00007167  Default_Handler                 
+00007167  GROUP0_IRQHandler               
+0000a575  GROUP1_IRQHandler               
+0000b105  Grayscale_Sensor_Init           
+00008cd1  Grayscale_Sensor_ReadAll        
+0000b4e5  HOSTexit                        
+00007167  HardFault_Handler               
+00007167  I2C0_IRQHandler                 
+00007167  I2C1_IRQHandler                 
+0000adc7  LapTaskControl_init             
+0000b40f  LapTaskControl_isRunning        
+0000afe1  LapTaskControl_reset            
+00009ab1  LapTaskControl_start            
+00008379  LapTaskControl_update           
+0000b4d5  LineTracking_getSpeed           
+0000b25f  LineTracking_init               
+0000b4e9  LineTracking_isEnabled          
+00009e41  LineTracking_readActiveCount    
+0000b445  LineTracking_reset              
+0000b4ed  LineTracking_setDebugEnabled    
+0000b4f1  LineTracking_setEnabled         
+0000b4f5  LineTracking_setSpeed           
+0000647d  LineTracking_update             
+0000b485  MPU6050_Angle_getDeviceId       
+0000b491  MPU6050_Angle_getZDegrees       
+000077a5  MPU6050_Angle_initWithProgress  
+0000b49d  MPU6050_Angle_reset             
+0000a871  MPU6050_Angle_update            
+0000aef9  MotorControl_coast              
+0000b015  MotorControl_handleEncoderEdge  
+0000a98d  MotorControl_init               
+0000b2dd  MotorControl_setTargetRpm       
+0000a259  MotorControl_takeStatus         
+000074b1  MotorControl_update             
+00007167  NMI_Handler                     
+00006d95  OLED_Init                       
+00007c91  OLED_ShowCalibration            
+00005f11  OLED_ShowStopwatch              
+00007a1d  OLED_ShowTask                   
+00007167  PendSV_Handler                  
+00007167  RTC_IRQHandler                  
+0000b4f9  Reset_Handler                   
+00007167  SPI0_IRQHandler                 
+00007167  SPI1_IRQHandler                 
+00007167  SVC_Handler                     
+00008e51  SYSCFG_DL_GPIO_init             
+0000aaed  SYSCFG_DL_I2C_MPU6050_init      
+0000ab41  SYSCFG_DL_I2C_OLED_init         
+0000a021  SYSCFG_DL_PWM_MOTOR_AB_init     
+0000a0b1  SYSCFG_DL_PWM_MOTOR_CD_init     
+0000acc9  SYSCFG_DL_SYSCTL_init           
+0000af71  SYSCFG_DL_TIMER_PID_init        
+0000a5e9  SYSCFG_DL_UART_0_init           
+0000a659  SYSCFG_DL_UART_1_init           
+0000a6c9  SYSCFG_DL_UART_OPENMV_init      
+0000ab95  SYSCFG_DL_init                  
+0000a2e5  SYSCFG_DL_initPower             
+0000b0a9  Stopwatch_getCurrentMs          
+0000b281  Stopwatch_start                 
+0000b1f3  StraightTaskControl_init        
+0000b455  StraightTaskControl_isRunning   
+0000b355  StraightTaskControl_reset       
+0000936d  StraightTaskControl_start       
+00008fb1  StraightTaskControl_update      
+00007167  SysTick_Handler                 
+00007167  TIMA0_IRQHandler                
+0000a9e5  TIMA1_IRQHandler                
+00007167  TIMG0_IRQHandler                
+00007167  TIMG12_IRQHandler               
+00007167  TIMG6_IRQHandler                
+00007167  TIMG7_IRQHandler                
+00007167  TIMG8_IRQHandler                
+0000a739  TaskExecutor_init               
+0000b23d  TaskExecutor_isRunning          
+0000b36f  TaskExecutor_reset              
+0000857d  TaskExecutor_update             
+0000b4a9  TaskManager_getActiveTask       
+00009d6d  TaskManager_init                
+0000b465  TaskManager_taskStartPressed    
+00009491  TaskManager_update              
+0000a7a9  UART0_IRQHandler                
+0000aa3d  UART1_IRQHandler                
+00007167  UART2_IRQHandler                
+0000ac35  UART3_IRQHandler                
 20208000  __STACK_END                     
 00000200  __STACK_SIZE                    
 00000000  __TI_ATRegion0_region_sz        
@@ -593,93 +629,97 @@ address   name
 00000000  __TI_ATRegion2_region_sz        
 00000000  __TI_ATRegion2_src_addr         
 00000000  __TI_ATRegion2_trg_addr         
-0000c5cc  __TI_CINIT_Base                 
-0000c5dc  __TI_CINIT_Limit                
-0000c5dc  __TI_CINIT_Warm                 
-0000c5b0  __TI_Handler_Table_Base         
-0000c5bc  __TI_Handler_Table_Limit        
-0000b585  __TI_auto_init_nobinit_nopinit  
-0000abd9  __TI_decompress_lzss            
-0000ba77  __TI_decompress_none            
+0000bfac  __TI_CINIT_Base                 
+0000bfbc  __TI_CINIT_Limit                
+0000bfbc  __TI_CINIT_Warm                 
+0000bf90  __TI_Handler_Table_Base         
+0000bf9c  __TI_Handler_Table_Limit        
+0000ae81  __TI_auto_init_nobinit_nopinit  
+0000a4f9  __TI_decompress_lzss            
+0000b421  __TI_decompress_none            
 ffffffff  __TI_pprof_out_hndl             
 ffffffff  __TI_prof_data_size             
 ffffffff  __TI_prof_data_start            
 00000000  __TI_static_base__              
-0000bac9  __TI_zero_init                  
-0000a45b  __addsf3                        
-0000b6ad  __aeabi_f2iz                    
-0000a45b  __aeabi_fadd                    
-0000afa1  __aeabi_fcmpeq                  
-0000afd7  __aeabi_fcmpge                  
-0000afe9  __aeabi_fcmpgt                  
-0000afc5  __aeabi_fcmple                  
-0000afb3  __aeabi_fcmplt                  
-0000a89f  __aeabi_fcmpun                  
-0000aad9  __aeabi_fdiv                    
-0000a8b5  __aeabi_fmul                    
-0000a451  __aeabi_fsub                    
-0000b5c1  __aeabi_i2f                     
-0000b105  __aeabi_idiv                    
-0000a5cb  __aeabi_idiv0                   
-0000b105  __aeabi_idivmod                 
-0000b2a5  __aeabi_l2f                     
-0000a9cb  __aeabi_ldiv0                   
-0000ba3d  __aeabi_ldivmod                 
-0000b985  __aeabi_llsl                    
-0000b8c5  __aeabi_lmul                    
-0000b9eb  __aeabi_memclr                  
-0000b9eb  __aeabi_memclr4                 
-0000b9eb  __aeabi_memclr8                 
-0000bb35  __aeabi_memcpy                  
-0000bb35  __aeabi_memcpy4                 
-0000bb35  __aeabi_memcpy8                 
-0000b9dd  __aeabi_memset                  
-0000b9dd  __aeabi_memset4                 
-0000b9dd  __aeabi_memset8                 
-0000b851  __aeabi_ui2f                    
-0000b48d  __aeabi_uidiv                   
-0000b48d  __aeabi_uidivmod                
-0000ba51  __aeabi_uldivmod                
-0000b985  __ashldi3                       
+0000b475  __TI_zero_init                  
+00009c9f  __addsf3                        
+0000afa9  __aeabi_f2iz                    
+00009c9f  __aeabi_fadd                    
+0000a931  __aeabi_fcmpeq                  
+0000a967  __aeabi_fcmpge                  
+0000a979  __aeabi_fcmpgt                  
+0000a955  __aeabi_fcmple                  
+0000a943  __aeabi_fcmplt                  
+0000a1b7  __aeabi_fcmpun                  
+0000a475  __aeabi_fdiv                    
+0000a1cd  __aeabi_fmul                    
+00009c95  __aeabi_fsub                    
+0000aebd  __aeabi_i2f                     
+0000aa95  __aeabi_idiv                    
+00009ee3  __aeabi_idiv0                   
+0000aa95  __aeabi_idivmod                 
+0000abe5  __aeabi_l2f                     
+0000a2e3  __aeabi_ldiv0                   
+0000b3d5  __aeabi_ldivmod                 
+0000b2fd  __aeabi_llsl                    
+0000b219  __aeabi_lmul                    
+0000b397  __aeabi_memclr                  
+0000b397  __aeabi_memclr4                 
+0000b397  __aeabi_memclr8                 
+0000b4c1  __aeabi_memcpy                  
+0000b4c1  __aeabi_memcpy4                 
+0000b4c1  __aeabi_memcpy8                 
+0000b389  __aeabi_memset                  
+0000b389  __aeabi_memset4                 
+0000b389  __aeabi_memset8                 
+0000b181  __aeabi_ui2f                    
+0000ad49  __aeabi_uidiv                   
+0000ad49  __aeabi_uidivmod                
+0000b3e9  __aeabi_uldivmod                
+0000b2fd  __ashldi3                       
 ffffffff  __binit__                       
-0000a829  __cmpsf2                        
-0000b50b  __divmoddi4                     
-0000aad9  __divsf3                        
-0000a829  __eqsf2                         
-0000b6ad  __fixsfsi                       
-0000b2a5  __floatdisf                     
-0000b5c1  __floatsisf                     
-0000b851  __floatunsisf                   
-0000a863  __gesf2                         
-0000a863  __gtsf2                         
-0000a829  __lesf2                         
-0000a829  __ltsf2                         
+0000a141  __cmpsf2                        
+0000ae05  __divmoddi4                     
+0000a475  __divsf3                        
+0000a141  __eqsf2                         
+0000afa9  __fixsfsi                       
+0000abe5  __floatdisf                     
+0000aebd  __floatsisf                     
+0000b181  __floatunsisf                   
+0000a17b  __gesf2                         
+0000a17b  __gtsf2                         
+0000a141  __lesf2                         
+0000a141  __ltsf2                         
 UNDEFED   __mpu_init                      
-0000b8c5  __muldi3                        
-0000b639  __muldsi3                       
-0000a8b5  __mulsf3                        
-0000a829  __nesf2                         
+0000b219  __muldi3                        
+0000af35  __muldsi3                       
+0000a1cd  __mulsf3                        
+0000a141  __nesf2                         
 20207e00  __stack                         
 20200000  __start___llvm_prf_bits         
 20200000  __start___llvm_prf_cnts         
 20200000  __stop___llvm_prf_bits          
 20200000  __stop___llvm_prf_cnts          
-0000a451  __subsf3                        
-0000a5cd  __udivmoddi4                    
-0000a89f  __unordsf2                      
-0000b829  _c_int00_noargs                 
+00009c95  __subsf3                        
+00009ee5  __udivmoddi4                    
+0000a1b7  __unordsf2                      
+0000b159  _c_int00_noargs                 
 UNDEFED   _system_post_cinit              
-0000bb5b  _system_pre_init                
-0000bb49  abort                           
+0000b4fd  _system_pre_init                
+0000b4db  abort                           
 ffffffff  binit                           
+0000bdf6  gLapTask2Profile                
+0000be08  gLapTask5Profile                
+0000be1a  gLapTask6Profile                
 20200000  gPWM_MOTOR_CDBackup             
+0000be60  gStraightTask4Profile           
 202000bc  gTIMER_PIDBackup                
-2020051c  gUART_1Backup                   
+20200590  gUART_1Backup                   
 00000000  interruptVectors                
-000000c1  main                            
-0000a66f  memcpy                          
-0000ae7d  memset                          
-20200610  systick_ms                      
+00004029  main                            
+00009f87  memcpy                          
+0000a80d  memset                          
+20200660  systick_ms                      
 
 
 GLOBAL SYMBOLS: SORTED BY Symbol Address 
@@ -697,187 +737,205 @@ address   name
 00000000  __TI_ATRegion2_trg_addr         
 00000000  __TI_static_base__              
 00000000  interruptVectors                
-000000c1  main                            
 00000200  __STACK_SIZE                    
-000075a5  OLED_ShowStopwatch              
-00007f49  OLED_Init                       
-0000831b  ADC0_IRQHandler                 
-0000831b  ADC1_IRQHandler                 
-0000831b  AES_IRQHandler                  
-0000831b  CANFD0_IRQHandler               
-0000831b  DAC0_IRQHandler                 
-0000831b  DMA_IRQHandler                  
-0000831b  Default_Handler                 
-0000831b  GROUP0_IRQHandler               
-0000831b  HardFault_Handler               
-0000831b  I2C0_IRQHandler                 
-0000831b  I2C1_IRQHandler                 
-0000831b  NMI_Handler                     
-0000831b  PendSV_Handler                  
-0000831b  RTC_IRQHandler                  
-0000831b  SPI0_IRQHandler                 
-0000831b  SPI1_IRQHandler                 
-0000831b  SVC_Handler                     
-0000831b  SysTick_Handler                 
-0000831b  TIMA0_IRQHandler                
-0000831b  TIMG0_IRQHandler                
-0000831b  TIMG12_IRQHandler               
-0000831b  TIMG6_IRQHandler                
-0000831b  TIMG7_IRQHandler                
-0000831b  TIMG8_IRQHandler                
-0000831b  UART2_IRQHandler                
-0000831d  Task1Control_update             
-000086c9  MotorControl_update             
-000089bd  OLED_ShowTask1Endpoint          
-00008c3d  MPU6050_Angle_initWithProgress  
-00008eb5  OLED_ShowTask                   
-0000912d  OLED_ShowCalibration            
-00009955  Grayscale_Sensor_ReadAll        
-00009ad5  SYSCFG_DL_GPIO_init             
-00009c35  CarControl_setMotion            
-00009d6d  TaskManager_update              
-00009e85  DL_Timer_initFourCCPWMMode      
-0000a191  DL_Timer_initTimerMode          
-0000a28d  AngleTurnControl_update         
-0000a375  TaskManager_init                
-0000a451  __aeabi_fsub                    
-0000a451  __subsf3                        
-0000a45b  __addsf3                        
-0000a45b  __aeabi_fadd                    
-0000a5cb  __aeabi_idiv0                   
-0000a5cd  __udivmoddi4                    
-0000a66f  memcpy                          
-0000a709  SYSCFG_DL_PWM_MOTOR_AB_init     
-0000a799  SYSCFG_DL_PWM_MOTOR_CD_init     
-0000a829  __cmpsf2                        
-0000a829  __eqsf2                         
-0000a829  __lesf2                         
-0000a829  __ltsf2                         
-0000a829  __nesf2                         
-0000a863  __gesf2                         
-0000a863  __gtsf2                         
-0000a89f  __aeabi_fcmpun                  
-0000a89f  __unordsf2                      
-0000a8b5  __aeabi_fmul                    
-0000a8b5  __mulsf3                        
-0000a941  MotorControl_takeStatus         
-0000a9cb  __aeabi_ldiv0                   
-0000a9cd  SYSCFG_DL_initPower             
-0000aa55  AngleTurnControl_start          
-0000aad9  __aeabi_fdiv                    
-0000aad9  __divsf3                        
-0000abd9  __TI_decompress_lzss            
-0000ac55  GROUP1_IRQHandler               
-0000acc9  SYSCFG_DL_UART_0_init           
-0000ad39  SYSCFG_DL_UART_1_init           
-0000ada9  SYSCFG_DL_UART_OPENMV_init      
-0000ae19  UART0_IRQHandler                
-0000ae7d  memset                          
-0000aee1  MPU6050_Angle_update            
-0000af41  DL_I2C_fillControllerTXFIFO     
-0000afa1  __aeabi_fcmpeq                  
-0000afb3  __aeabi_fcmplt                  
-0000afc5  __aeabi_fcmple                  
-0000afd7  __aeabi_fcmpge                  
-0000afe9  __aeabi_fcmpgt                  
-0000affd  MotorControl_init               
-0000b055  TIMA1_IRQHandler                
-0000b0ad  UART1_IRQHandler                
-0000b105  __aeabi_idiv                    
-0000b105  __aeabi_idivmod                 
-0000b15d  SYSCFG_DL_I2C_MPU6050_init      
-0000b1b1  SYSCFG_DL_I2C_OLED_init         
-0000b205  SYSCFG_DL_init                  
-0000b255  Task1Control_init               
-0000b2a5  __aeabi_l2f                     
-0000b2a5  __floatdisf                     
-0000b2f5  UART3_IRQHandler                
-0000b341  DL_UART_init                    
-0000b3cd  SYSCFG_DL_SYSCTL_init           
-0000b40d  Task1Control_reset              
-0000b48d  __aeabi_uidiv                   
-0000b48d  __aeabi_uidivmod                
-0000b4cd  CarControl_init                 
-0000b50b  __divmoddi4                     
-0000b549  DL_I2C_flushControllerTXFIFO    
-0000b585  __TI_auto_init_nobinit_nopinit  
-0000b5c1  __aeabi_i2f                     
-0000b5c1  __floatsisf                     
-0000b5fd  MotorControl_coast              
-0000b639  __muldsi3                       
-0000b675  SYSCFG_DL_TIMER_PID_init        
-0000b6ad  __aeabi_f2iz                    
-0000b6ad  __fixsfsi                       
-0000b6e5  MotorControl_handleEncoderEdge  
-0000b719  DL_I2C_flushControllerRXFIFO    
-0000b749  DL_UART_transmitDataBlocking    
-0000b779  Stopwatch_getCurrentMs          
-0000b7a9  AngleTurnControl_init           
-0000b7d5  Grayscale_Sensor_Init           
-0000b801  CarControl_stop                 
-0000b829  _c_int00_noargs                 
-0000b851  __aeabi_ui2f                    
-0000b851  __floatunsisf                   
-0000b879  DL_I2C_setClockConfig           
-0000b89f  AngleTurnControl_cancel         
-0000b8c5  __aeabi_lmul                    
-0000b8c5  __muldi3                        
-0000b8e9  Stopwatch_start                 
-0000b909  Stopwatch_stop                  
-0000b929  CarControl_coast                
-0000b947  CarControl_emergencyStop        
-0000b965  MotorControl_setTargetRpm       
-0000b985  __aeabi_llsl                    
-0000b985  __ashldi3                       
-0000b9a5  DL_Timer_setCaptCompUpdateMethod
-0000b9c1  DL_Timer_setClockConfig         
-0000b9dd  __aeabi_memset                  
-0000b9dd  __aeabi_memset4                 
-0000b9dd  __aeabi_memset8                 
-0000b9eb  __aeabi_memclr                  
-0000b9eb  __aeabi_memclr4                 
-0000b9eb  __aeabi_memclr8                 
-0000b9f9  DL_Timer_setCaptureCompareOutCtl
-0000ba3d  __aeabi_ldivmod                 
-0000ba51  __aeabi_uldivmod                
-0000ba65  DL_UART_setClockConfig          
-0000ba77  __TI_decompress_none            
-0000ba89  DL_Timer_setCaptureCompareValue 
-0000ba99  TaskManager_takeStatusPressed   
-0000baa9  TaskManager_takeStatusReleased  
-0000bab9  TaskManager_taskStartPressed    
-0000bac9  __TI_zero_init                  
-0000bad9  MPU6050_Angle_getDeviceId       
-0000bae5  MPU6050_Angle_getZDegrees       
-0000baf1  MPU6050_Angle_reset             
-0000bb09  TaskManager_getActiveTask       
-0000bb15  TaskManager_getTask1Endpoint    
-0000bb21  DL_Common_delayCycles           
-0000bb2b  Task1Control_isActive           
-0000bb35  __aeabi_memcpy                  
-0000bb35  __aeabi_memcpy4                 
-0000bb35  __aeabi_memcpy8                 
-0000bb3d  AngleTurnControl_isActive       
-0000bb43  CarControl_getSpeedRpm          
-0000bb49  abort                           
-0000bb4f  CarControl_getTurnInnerPercent  
-0000bb52  C$$EXIT                         
-0000bb53  HOSTexit                        
-0000bb57  Reset_Handler                   
-0000bb5b  _system_pre_init                
-0000c5b0  __TI_Handler_Table_Base         
-0000c5bc  __TI_Handler_Table_Limit        
-0000c5cc  __TI_CINIT_Base                 
-0000c5dc  __TI_CINIT_Limit                
-0000c5dc  __TI_CINIT_Warm                 
+00004029  main                            
+00005f11  OLED_ShowStopwatch              
+0000647d  LineTracking_update             
+00006d95  OLED_Init                       
+00007167  ADC0_IRQHandler                 
+00007167  ADC1_IRQHandler                 
+00007167  AES_IRQHandler                  
+00007167  CANFD0_IRQHandler               
+00007167  DAC0_IRQHandler                 
+00007167  DMA_IRQHandler                  
+00007167  Default_Handler                 
+00007167  GROUP0_IRQHandler               
+00007167  HardFault_Handler               
+00007167  I2C0_IRQHandler                 
+00007167  I2C1_IRQHandler                 
+00007167  NMI_Handler                     
+00007167  PendSV_Handler                  
+00007167  RTC_IRQHandler                  
+00007167  SPI0_IRQHandler                 
+00007167  SPI1_IRQHandler                 
+00007167  SVC_Handler                     
+00007167  SysTick_Handler                 
+00007167  TIMA0_IRQHandler                
+00007167  TIMG0_IRQHandler                
+00007167  TIMG12_IRQHandler               
+00007167  TIMG6_IRQHandler                
+00007167  TIMG7_IRQHandler                
+00007167  TIMG8_IRQHandler                
+00007167  UART2_IRQHandler                
+000074b1  MotorControl_update             
+000077a5  MPU6050_Angle_initWithProgress  
+00007a1d  OLED_ShowTask                   
+00007c91  OLED_ShowCalibration            
+00008379  LapTaskControl_update           
+0000857d  TaskExecutor_update             
+00008cd1  Grayscale_Sensor_ReadAll        
+00008e51  SYSCFG_DL_GPIO_init             
+00008fb1  StraightTaskControl_update      
+00009111  CarControl_setMotion            
+0000936d  StraightTaskControl_start       
+00009491  TaskManager_update              
+000095a9  DL_Timer_initFourCCPWMMode      
+000099b5  DL_Timer_initTimerMode          
+00009ab1  LapTaskControl_start            
+00009bad  AngleTurnControl_update         
+00009c95  __aeabi_fsub                    
+00009c95  __subsf3                        
+00009c9f  __addsf3                        
+00009c9f  __aeabi_fadd                    
+00009d6d  TaskManager_init                
+00009e41  LineTracking_readActiveCount    
+00009ee3  __aeabi_idiv0                   
+00009ee5  __udivmoddi4                    
+00009f87  memcpy                          
+0000a021  SYSCFG_DL_PWM_MOTOR_AB_init     
+0000a0b1  SYSCFG_DL_PWM_MOTOR_CD_init     
+0000a141  __cmpsf2                        
+0000a141  __eqsf2                         
+0000a141  __lesf2                         
+0000a141  __ltsf2                         
+0000a141  __nesf2                         
+0000a17b  __gesf2                         
+0000a17b  __gtsf2                         
+0000a1b7  __aeabi_fcmpun                  
+0000a1b7  __unordsf2                      
+0000a1cd  __aeabi_fmul                    
+0000a1cd  __mulsf3                        
+0000a259  MotorControl_takeStatus         
+0000a2e3  __aeabi_ldiv0                   
+0000a2e5  SYSCFG_DL_initPower             
+0000a36d  AngleTurnControl_start          
+0000a475  __aeabi_fdiv                    
+0000a475  __divsf3                        
+0000a4f9  __TI_decompress_lzss            
+0000a575  GROUP1_IRQHandler               
+0000a5e9  SYSCFG_DL_UART_0_init           
+0000a659  SYSCFG_DL_UART_1_init           
+0000a6c9  SYSCFG_DL_UART_OPENMV_init      
+0000a739  TaskExecutor_init               
+0000a7a9  UART0_IRQHandler                
+0000a80d  memset                          
+0000a871  MPU6050_Angle_update            
+0000a8d1  DL_I2C_fillControllerTXFIFO     
+0000a931  __aeabi_fcmpeq                  
+0000a943  __aeabi_fcmplt                  
+0000a955  __aeabi_fcmple                  
+0000a967  __aeabi_fcmpge                  
+0000a979  __aeabi_fcmpgt                  
+0000a98d  MotorControl_init               
+0000a9e5  TIMA1_IRQHandler                
+0000aa3d  UART1_IRQHandler                
+0000aa95  __aeabi_idiv                    
+0000aa95  __aeabi_idivmod                 
+0000aaed  SYSCFG_DL_I2C_MPU6050_init      
+0000ab41  SYSCFG_DL_I2C_OLED_init         
+0000ab95  SYSCFG_DL_init                  
+0000abe5  __aeabi_l2f                     
+0000abe5  __floatdisf                     
+0000ac35  UART3_IRQHandler                
+0000ac81  DL_UART_init                    
+0000acc9  SYSCFG_DL_SYSCTL_init           
+0000ad49  __aeabi_uidiv                   
+0000ad49  __aeabi_uidivmod                
+0000ad89  CarControl_init                 
+0000adc7  LapTaskControl_init             
+0000ae05  __divmoddi4                     
+0000ae45  DL_I2C_flushControllerTXFIFO    
+0000ae81  __TI_auto_init_nobinit_nopinit  
+0000aebd  __aeabi_i2f                     
+0000aebd  __floatsisf                     
+0000aef9  MotorControl_coast              
+0000af35  __muldsi3                       
+0000af71  SYSCFG_DL_TIMER_PID_init        
+0000afa9  __aeabi_f2iz                    
+0000afa9  __fixsfsi                       
+0000afe1  LapTaskControl_reset            
+0000b015  MotorControl_handleEncoderEdge  
+0000b049  DL_I2C_flushControllerRXFIFO    
+0000b079  DL_UART_transmitDataBlocking    
+0000b0a9  Stopwatch_getCurrentMs          
+0000b0d9  AngleTurnControl_init           
+0000b105  Grayscale_Sensor_Init           
+0000b131  CarControl_stop                 
+0000b159  _c_int00_noargs                 
+0000b181  __aeabi_ui2f                    
+0000b181  __floatunsisf                   
+0000b1a9  DL_I2C_setClockConfig           
+0000b1cf  AngleTurnControl_cancel         
+0000b1f3  StraightTaskControl_init        
+0000b219  __aeabi_lmul                    
+0000b219  __muldi3                        
+0000b23d  TaskExecutor_isRunning          
+0000b25f  LineTracking_init               
+0000b281  Stopwatch_start                 
+0000b2a1  CarControl_coast                
+0000b2bf  CarControl_emergencyStop        
+0000b2dd  MotorControl_setTargetRpm       
+0000b2fd  __aeabi_llsl                    
+0000b2fd  __ashldi3                       
+0000b31d  DL_Timer_setCaptCompUpdateMethod
+0000b339  DL_Timer_setClockConfig         
+0000b355  StraightTaskControl_reset       
+0000b36f  TaskExecutor_reset              
+0000b389  __aeabi_memset                  
+0000b389  __aeabi_memset4                 
+0000b389  __aeabi_memset8                 
+0000b397  __aeabi_memclr                  
+0000b397  __aeabi_memclr4                 
+0000b397  __aeabi_memclr8                 
+0000b3a5  DL_Timer_setCaptureCompareOutCtl
+0000b3d5  __aeabi_ldivmod                 
+0000b3e9  __aeabi_uldivmod                
+0000b3fd  DL_UART_setClockConfig          
+0000b40f  LapTaskControl_isRunning        
+0000b421  __TI_decompress_none            
+0000b435  DL_Timer_setCaptureCompareValue 
+0000b445  LineTracking_reset              
+0000b455  StraightTaskControl_isRunning   
+0000b465  TaskManager_taskStartPressed    
+0000b475  __TI_zero_init                  
+0000b485  MPU6050_Angle_getDeviceId       
+0000b491  MPU6050_Angle_getZDegrees       
+0000b49d  MPU6050_Angle_reset             
+0000b4a9  TaskManager_getActiveTask       
+0000b4b5  DL_Common_delayCycles           
+0000b4c1  __aeabi_memcpy                  
+0000b4c1  __aeabi_memcpy4                 
+0000b4c1  __aeabi_memcpy8                 
+0000b4c9  AngleTurnControl_isActive       
+0000b4cf  CarControl_getSpeedRpm          
+0000b4d5  LineTracking_getSpeed           
+0000b4db  abort                           
+0000b4e1  CarControl_getTurnInnerPercent  
+0000b4e4  C$$EXIT                         
+0000b4e5  HOSTexit                        
+0000b4e9  LineTracking_isEnabled          
+0000b4ed  LineTracking_setDebugEnabled    
+0000b4f1  LineTracking_setEnabled         
+0000b4f5  LineTracking_setSpeed           
+0000b4f9  Reset_Handler                   
+0000b4fd  _system_pre_init                
+0000bdf6  gLapTask2Profile                
+0000be08  gLapTask5Profile                
+0000be1a  gLapTask6Profile                
+0000be60  gStraightTask4Profile           
+0000bf90  __TI_Handler_Table_Base         
+0000bf9c  __TI_Handler_Table_Limit        
+0000bfac  __TI_CINIT_Base                 
+0000bfbc  __TI_CINIT_Limit                
+0000bfbc  __TI_CINIT_Warm                 
 20200000  __start___llvm_prf_bits         
 20200000  __start___llvm_prf_cnts         
 20200000  __stop___llvm_prf_bits          
 20200000  __stop___llvm_prf_cnts          
 20200000  gPWM_MOTOR_CDBackup             
 202000bc  gTIMER_PIDBackup                
-2020051c  gUART_1Backup                   
-20200610  systick_ms                      
+20200590  gUART_1Backup                   
+20200660  systick_ms                      
 20207e00  __stack                         
 20208000  __STACK_END                     
 ffffffff  __TI_pprof_out_hndl             
@@ -888,4 +946,4 @@ ffffffff  binit
 UNDEFED   __mpu_init                      
 UNDEFED   _system_post_cinit              
 
-[201 symbols]
+[219 symbols]
