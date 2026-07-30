@@ -43,6 +43,7 @@ typedef struct {
     CarControl_Config config;
     int16_t speedRpm;
     uint8_t turnInnerPercent;
+    CarControl_Motion motion;
 } CarControl;
 
 /* 绑定四个电机并加载默认参数。 */
@@ -60,5 +61,6 @@ void CarControl_setMotion(CarControl *car, CarControl_Motion motion,
 int16_t CarControl_getSpeedRpm(const CarControl *car);
 /* 读取最近一次弧线内轮速度百分比。 */
 uint8_t CarControl_getTurnInnerPercent(const CarControl *car);
+CarControl_Motion CarControl_getMotion(const CarControl *car);
 
 #endif

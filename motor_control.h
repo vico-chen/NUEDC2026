@@ -47,9 +47,11 @@ typedef struct {
     float kp;
     float ki;
     float kd;
-    /* 正常驱动最大占空比和超速时最大反向制动力。 */
+    /* 正常驱动最大占空比。 */
     float outputMaxPercent;
-    float brakeMaxPercent;
+    /* 行驶中仅允许轻微反向制动，停车时才使用较强制动力。 */
+    float runningBrakeMaxPercent;
+    float stopBrakeMaxPercent;
 } MotorControl_Config;
 
 /* 串口状态输出使用的只读快照。 */

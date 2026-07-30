@@ -138,18 +138,18 @@ static int16_t MotorControl_updatePid(MotorControl *motor,
     motor->pidOutput += increment;
 
     /*
-     * 按目标方向设置不对称限幅：同向驱动可用完整输出，反向制动只允许
-     * brakeMaxPercent，避免制动力演变为不受控反转。
+     * 按目标方向设置不对称限幅：行驶中只允许较小的反向制动，
+     * 目标为零时才使用停车制动力，避免弯道内轮被突然反拖。
      */
     if (targetRpm > 0) {
-        outputMinimum = -motor->config.brakeMaxPercent;
+        outputMinimum = -motor->config.runningBrakeMaxPercent;
         outputMaximum = motor->config.outputMaxPercent;
     } else if (targetRpm < 0) {
         outputMinimum = -motor->config.outputMaxPercent;
-        outputMaximum = motor->config.brakeMaxPercent;
+        outputMaximum = motor->config.runningBrakeMaxPercent;
     } else {
-        outputMinimum = -motor->config.brakeMaxPercent;
-        outputMaximum = motor->config.brakeMaxPercent;
+        outputMinimum = -motor->config.stopBrakeMaxPercent;
+        outputMaximum = motor->config.stopBrakeMaxPercent;
     }
 
     if (motor->pidOutput > outputMaximum) {

@@ -37,7 +37,12 @@
 #include "mpu6050_angle.h"
 #include "angle_turn_control.h"
 #include "grayscale_sensor.h"
-#include "oled_test.h"
+#include "line_tracking.h"
+#include "oled.h"
+#include "system_time.h"
+#include "stopwatch.h"
+#include "task_manager.h"
+#include "task_executor.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -61,19 +66,6 @@
 #define ANGLE_TURN_DEFAULT_MAX_RPM (100)
 #define ANGLE_TURN_LEFT_YAW_SIGN (1)
 #define GRAYSCALE_STREAM_PERIOD_SAMPLES (10U) /* 10 次 × 10 ms = 100 ms */
-
-/* 八路数字灰度巡线参数：黑线对应传感器输出 1。 */
-#define LINE_TRACKING_ACTIVE_LEVEL (1U)
-#define LINE_PID_KP (4.0f)
-#define LINE_PID_KI (0.01f)
-#define LINE_PID_KD (0.0f)
-#define LINE_PID_INTEGRAL_LIMIT (2000.0f)
-#define LINE_PID_DEADBAND_RPM_OFFSET (8) /* 转速差在此范围内按直行处理 */
-#define LINE_ERR_DEADBAND (5) /* |误差| <= 5 视为居中 */
-#define LINE_ERR_ABS_FALLBACK (30) /* 丢线时沿最后一次方向继续寻找 */
-#define LINE_DEBUG_PRINT_PERIOD_SAMPLES (10U) /* 10 次 × 10 ms = 100 ms */
-/* 连续出现指定次数的新值后，才确认某路传感器翻转。 */
-#define LINE_SENSOR_DEBOUNCE_SAMPLES (2U)
 
 /*
  * 从车体上方向下看的车轮布局：
@@ -114,7 +106,8 @@ static const MotorControl_Config gMotorAConfig = {
     .ki = 1.0f,
     .kd = 0.2f,
     .outputMaxPercent = 99.0f,
-    .brakeMaxPercent = 25.0f,
+    .runningBrakeMaxPercent = 8.0f,
+    .stopBrakeMaxPercent = 25.0f,
 };
 
 static MotorControl gMotorB;
@@ -143,7 +136,8 @@ static const MotorControl_Config gMotorBConfig = {
     .ki = 1.0f,
     .kd = 0.2f,
     .outputMaxPercent = 99.0f,
-    .brakeMaxPercent = 25.0f,
+    .runningBrakeMaxPercent = 8.0f,
+    .stopBrakeMaxPercent = 25.0f,
 };
 
 static MotorControl gMotorC;
@@ -172,7 +166,8 @@ static const MotorControl_Config gMotorCConfig = {
     .ki = 1.0f,
     .kd = 0.2f,
     .outputMaxPercent = 99.0f,
-    .brakeMaxPercent = 25.0f,
+    .runningBrakeMaxPercent = 8.0f,
+    .stopBrakeMaxPercent = 25.0f,
 };
 
 static MotorControl gMotorD;
@@ -201,10 +196,14 @@ static const MotorControl_Config gMotorDConfig = {
     .ki = 1.0f,
     .kd = 0.2f,
     .outputMaxPercent = 99.0f,
-    .brakeMaxPercent = 25.0f,
+    .runningBrakeMaxPercent = 8.0f,
+    .stopBrakeMaxPercent = 25.0f,
 };
 
 static CarControl gCar;
+static LineTracking gLineTracking;
+static TaskExecutor gTaskExecutor;
+static bool gOledReady;
 /* 将四个独立电机映射为车体的前后、左右和弧线运动。 */
 static const CarControl_Config gCarConfig = {
     .rightRearMotor = &gMotorA,
@@ -254,17 +253,6 @@ static bool gGrayscaleStreamEnabled;
 static uint8_t gGrayscaleStreamDivider;
 
 /* 巡线 PID、输入消抖及调试输出的运行状态。 */
-static bool gLineTrackingEnabled;
-static bool gLineTrackingDebugEnabled;
-static int16_t gLineTrackingBaseSpeedRpm;
-static float gLineTrackingIntegral;
-static int16_t gLineTrackingLastErr;
-static uint8_t gLineTrackingDebugDivider;
-static uint8_t gLineFilteredValues[GRAYSCALE_SENSOR_CHANNELS];
-static uint8_t gLinePendingValues[GRAYSCALE_SENSOR_CHANNELS];
-static uint8_t gLinePendingCount[GRAYSCALE_SENSOR_CHANNELS];
-static bool gLineFilterReady;
-
 /* 四路电机状态支持单次报告和连续报告两种模式。 */
 static bool gMotorStatusStreamEnabled;
 static bool gMotorStatusReportOnce;
@@ -349,6 +337,11 @@ static void UART_printHelp(void)
     UART_sendString("  I0        stop\r\n");
     UART_sendString("  I1        start with debug prints\r\n");
     UART_sendString("\r\n");
+    UART_sendString("[Tasks]   Q1..Q6 select | QS start | Q0 cancel | Q status\r\n");
+    UART_sendString("  implemented: Q2/Q5/Q6 lap, Q4 straight 2000mm\r\n");
+    UART_sendString("  PA13 cycles Task2/4/5/6 | PA29 starts selected task\r\n");
+    UART_sendString("  Task1/Task3 need route definitions and will not move\r\n");
+    UART_sendString("\r\n");
     UART_sendString("[Status]\r\n");
     UART_sendString("  Y / Y0      yaw read / reset\r\n");
     UART_sendString("  G / G1 / G0 grayscale once/stream/off\r\n");
@@ -371,6 +364,7 @@ static void UART_printBanner(void)
     UART_sendString("  G       read grayscale\r\n");
     UART_sendString("  Y       read yaw angle\r\n");
     UART_sendString("  I 200   line tracking | I0 stop\r\n");
+    UART_sendString("  PA13 select task | PA29 start | Q2/QS via UART\r\n");
     UART_sendString(">>> Send H or ? for full command list\r\n");
 }
 
@@ -507,249 +501,6 @@ static void UART_reportGrayscale(void)
         UART_sendInt32((int32_t) values[i]);
     }
     UART_sendString("\r\n");
-}
-
-static void LineTracking_resetPid(void)
-{
-    uint8_t i;
-
-    /* 启动/停止巡线时同时清除积分、历史误差和所有消抖记忆。 */
-    gLineTrackingIntegral = 0.0f;
-    gLineTrackingLastErr = 0;
-    gLineTrackingDebugDivider = 0U;
-    gLineFilterReady = false;
-    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
-        gLineFilteredValues[i] = 0U;
-        gLinePendingValues[i] = 0U;
-        gLinePendingCount[i] = 0U;
-    }
-}
-
-/*
- * 对数字灰度输入做时间消抖，重点抑制黑线边缘处 X4/X5 的来回跳变。
- * 某路只有连续 N 次读到相同的新值，滤波结果才真正翻转。
- */
-static void LineTracking_filterSensors(
-    const uint8_t raw[GRAYSCALE_SENSOR_CHANNELS],
-    uint8_t filtered[GRAYSCALE_SENSOR_CHANNELS])
-{
-    uint8_t i;
-
-    /* 第一次采样直接建立初值，避免启动时人为延迟 N 个周期。 */
-    if (!gLineFilterReady) {
-        for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
-            gLineFilteredValues[i] = raw[i];
-            gLinePendingValues[i] = raw[i];
-            gLinePendingCount[i] = 0U;
-            filtered[i] = raw[i];
-        }
-        gLineFilterReady = true;
-        return;
-    }
-
-    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
-        if (raw[i] == gLineFilteredValues[i]) {
-            /* 原始值回到当前稳定值，取消尚未确认的翻转。 */
-            gLinePendingValues[i] = raw[i];
-            gLinePendingCount[i] = 0U;
-        } else if (raw[i] == gLinePendingValues[i]) {
-            /* 新值连续出现，累计到阈值后接受翻转。 */
-            if (gLinePendingCount[i] < 255U) {
-                gLinePendingCount[i]++;
-            }
-            if (gLinePendingCount[i] >= LINE_SENSOR_DEBOUNCE_SAMPLES) {
-                gLineFilteredValues[i] = raw[i];
-                gLinePendingCount[i] = 0U;
-            }
-        } else {
-            /* 出现另一种候选值，重新开始连续计数。 */
-            gLinePendingValues[i] = raw[i];
-            gLinePendingCount[i] = 1U;
-        }
-        filtered[i] = gLineFilteredValues[i];
-    }
-}
-
-static int16_t LineTracking_computeErr(
-    const uint8_t values[GRAYSCALE_SENSOR_CHANNELS])
-{
-    /*
-     * X1～X8 的位置权重：左侧为负，右侧为正。
-     * 中间的 X4/X5 权重设为 0，这样线边缘导致的单路闪烁不会反复产生
-     * 正负误差，从而减少小车在中心线附近左右摆动。
-     */
-    static const int16_t weights[GRAYSCALE_SENSOR_CHANNELS] = {
-        -30, -20, -15, 0, 0, 15, 20, 30
-    };
-
-    int32_t weightedSum = 0;
-    uint8_t activeCount = 0U;
-    uint8_t outerActive = 0U;
-    uint8_t centerActive = 0U;
-    uint8_t i;
-    int16_t err;
-
-    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
-        if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
-            weightedSum += (int32_t) weights[i];
-            activeCount++;
-            if ((i == 3U) || (i == 4U)) {
-                centerActive++;
-            } else {
-                outerActive++;
-            }
-        }
-    }
-
-    /* 只有中心传感器压线时，直接判定小车已经居中。 */
-    if ((centerActive > 0U) && (outerActive == 0U)) {
-        return 0;
-    }
-
-    if (activeCount > 0U) {
-        /* 多路同时压线时取权重平均，使误差随黑线位置平滑变化。 */
-        err = (int16_t) (weightedSum / (int32_t) activeCount);
-        if ((err <= LINE_ERR_DEADBAND) && (err >= -LINE_ERR_DEADBAND)) {
-            return 0;
-        }
-        return err;
-    }
-
-    /* 完全丢线时沿上一次误差方向继续找线，而不是突然直行。 */
-    if (gLineTrackingLastErr > 0) {
-        return LINE_ERR_ABS_FALLBACK;
-    }
-    if (gLineTrackingLastErr < 0) {
-        return (int16_t) (-LINE_ERR_ABS_FALLBACK);
-    }
-    return 0;
-}
-
-static void LineTracking_applyMotion(int16_t pidRpmOffset)
-{
-    int16_t speedRpm = gLineTrackingBaseSpeedRpm;
-    int16_t pidAbs = (pidRpmOffset < 0) ? (int16_t) (-pidRpmOffset)
-                                         : pidRpmOffset;
-    int16_t innerRpm;
-    uint8_t innerPercent;
-    CarControl_Motion motion;
-
-    /* 基础速度无效时保持停车，避免除零。 */
-    if (speedRpm <= 0) {
-        CarControl_stop(&gCar);
-        return;
-    }
-
-    /* PID 输出很小时按直行处理，抑制中心附近的频繁转向切换。 */
-    if (pidAbs <= LINE_PID_DEADBAND_RPM_OFFSET) {
-        motion = CAR_CONTROL_FORWARD;
-        CarControl_setMotion(&gCar, motion, speedRpm,
-            CarControl_getTurnInnerPercent(&gCar));
-        return;
-    }
-
-    /* PID 绝对值转换为内侧车轮的降速量。 */
-    if (pidAbs > speedRpm) {
-        pidAbs = speedRpm;
-    }
-    innerRpm = (int16_t) (speedRpm - pidAbs);
-    if (innerRpm < 0) {
-        innerRpm = 0;
-    }
-
-    innerPercent = (uint8_t) ((int32_t) innerRpm * 100 /
-        (int32_t) speedRpm);
-    if (innerPercent > 100U) {
-        innerPercent = 100U;
-    }
-    if (innerPercent == 0U) {
-        innerPercent = 1U; /* 保持非零，避免落入电机死区后难以重新起转 */
-    }
-
-    /* PID 为负表示黑线在车体左侧，需要执行左弧线；为正则右转。 */
-    motion = (pidRpmOffset < 0) ? CAR_CONTROL_FORWARD_LEFT
-                                 : CAR_CONTROL_FORWARD_RIGHT;
-    CarControl_setMotion(&gCar, motion, speedRpm, innerPercent);
-}
-
-static void LineTracking_update(void)
-{
-    uint8_t rawValues[GRAYSCALE_SENSOR_CHANNELS];
-    uint8_t values[GRAYSCALE_SENSOR_CHANNELS];
-    int16_t err;
-    float pid;
-    float derivative;
-    int16_t pidOffsetRpm;
-    uint8_t activeCount = 0U;
-    uint8_t i;
-
-    /* 依次读取 X1～X8，再通过时间消抖得到本周期有效输入。 */
-    Grayscale_Sensor_ReadAll(rawValues);
-    LineTracking_filterSensors(rawValues, values);
-    for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
-        if (values[i] == LINE_TRACKING_ACTIVE_LEVEL) {
-            activeCount++;
-        }
-    }
-
-    err = LineTracking_computeErr(values);
-    if ((activeCount == 0U) || (err == 0)) {
-        /* 居中或丢线时清积分，防止重新见线后积分饱和导致猛转。 */
-        gLineTrackingIntegral = 0.0f;
-    } else {
-        gLineTrackingIntegral += (float) err;
-        if (gLineTrackingIntegral > LINE_PID_INTEGRAL_LIMIT) {
-            gLineTrackingIntegral = LINE_PID_INTEGRAL_LIMIT;
-        } else if (gLineTrackingIntegral < -LINE_PID_INTEGRAL_LIMIT) {
-            gLineTrackingIntegral = -LINE_PID_INTEGRAL_LIMIT;
-        }
-    }
-
-    /* 离散 PID：当前每次调用间隔固定为 10 ms，系数已按采样周期整定。 */
-    derivative = (float) (err - gLineTrackingLastErr);
-    pid = (LINE_PID_KP * (float) err) +
-        (LINE_PID_KI * gLineTrackingIntegral) +
-        (LINE_PID_KD * derivative);
-
-    /* 输出限幅为基础速度，保证计算出的内轮目标转速不会成为负数。 */
-    {
-        int16_t maxOffset = gLineTrackingBaseSpeedRpm;
-        if (maxOffset < 0) {
-            maxOffset = 0;
-        }
-        if (pid > (float) maxOffset) {
-            pid = (float) maxOffset;
-        } else if (pid < -(float) maxOffset) {
-            pid = -(float) maxOffset;
-        }
-    }
-
-    pidOffsetRpm = (int16_t) pid;
-    gLineTrackingLastErr = err;
-    LineTracking_applyMotion(pidOffsetRpm);
-
-    /* 调试模式每 100 ms 输出一次误差、PID 结果和滤波后的灰度值。 */
-    if (gLineTrackingDebugEnabled) {
-        gLineTrackingDebugDivider++;
-        if (gLineTrackingDebugDivider >=
-            LINE_DEBUG_PRINT_PERIOD_SAMPLES) {
-            gLineTrackingDebugDivider = 0U;
-            UART_sendString("LINE dbg err=");
-            UART_sendInt32((int32_t) err);
-            UART_sendString(" pid=");
-            UART_sendInt32((int32_t) pidOffsetRpm);
-            UART_sendString(" ");
-            UART_sendString("GRAY");
-            for (i = 0U; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
-                UART_sendString(" X");
-                UART_sendInt32((int32_t) (i + 1U));
-                DL_UART_Main_transmitDataBlocking(
-                    UART_0_INST, (uint8_t) ':');
-                UART_sendInt32((int32_t) values[i]);
-            }
-            UART_sendString("\r\n");
-        }
-    }
 }
 
 static bool Car_parseUnsignedValue(
@@ -1024,15 +775,113 @@ static void Car_processUartCommand(void)
         return;
     }
 
+    /*
+     * 任务命令只使用 UART0：Q1..Q6 选择、QS 启动、Q0 取消、Q 查询。
+     * PA13 可循环选择已支持任务，PA29 启动键与 QS 等价。
+     * 整个任务控制不需要 OpenMV、UART1 或 UART3。
+     */
+    if (command == 'Q') {
+        char taskArgument;
+
+        while ((gUartCommand[index] == ' ') ||
+               (gUartCommand[index] == '\t')) {
+            index++;
+        }
+        taskArgument = gUartCommand[index];
+        if ((taskArgument >= 'a') && (taskArgument <= 'z')) {
+            taskArgument =
+                (char) (taskArgument - ('a' - 'A'));
+        }
+
+        if (taskArgument == '\0') {
+            UART_sendString("TASK selected=");
+            UART_sendInt32((int32_t) TaskManager_getSelected());
+            UART_sendString(" active=");
+            UART_sendInt32((int32_t)
+                TaskExecutor_getActiveTask(&gTaskExecutor));
+            UART_sendString(" running=");
+            UART_sendInt32(TaskExecutor_isRunning(&gTaskExecutor) ?
+                1 : 0);
+            UART_sendString(" fault=");
+            UART_sendInt32(
+                TaskExecutor_lastTaskFault(&gTaskExecutor) ? 1 : 0);
+            UART_sendString(" elapsed_ms=");
+            UART_sendInt32((int32_t) Stopwatch_getElapsedMs());
+            UART_sendString("\r\n");
+            return;
+        }
+
+        index++;
+        while ((gUartCommand[index] == ' ') ||
+               (gUartCommand[index] == '\t')) {
+            index++;
+        }
+        if (gUartCommand[index] != '\0') {
+            UART_sendString(
+                "TASK_FORMAT_ERROR usage: Q1..Q6 | QS | Q0 | Q\r\n");
+            return;
+        }
+
+        if (taskArgument == 'S') {
+            if (!TaskExecutor_isRunning(&gTaskExecutor)) {
+                AngleTurnControl_cancel(&gAngleTurn);
+                LineTracking_setEnabled(&gLineTracking, false);
+                LineTracking_reset(&gLineTracking);
+            }
+            (void) TaskExecutor_startSelected(&gTaskExecutor);
+            return;
+        }
+        if (taskArgument == '0') {
+            TaskExecutor_reset(&gTaskExecutor);
+            CarControl_emergencyStop(&gCar);
+            UART_sendString("TASK_CANCELLED\r\n");
+            return;
+        }
+        if ((taskArgument >= '1') && (taskArgument <= '6')) {
+            TaskId selected = (TaskId) (taskArgument - '0');
+
+            if (TaskExecutor_isRunning(&gTaskExecutor)) {
+                UART_sendString(
+                    "TASK_BUSY (send Q0 before changing task)\r\n");
+            } else {
+                (void) TaskManager_select(selected);
+                if (gOledReady) {
+                    gOledReady = OLED_ShowTask((uint8_t) selected);
+                }
+                UART_sendString("TASK_SELECTED ");
+                UART_sendInt32((int32_t) selected);
+                if ((selected == TASK_ID_1) ||
+                    (selected == TASK_ID_3)) {
+                    UART_sendString(
+                        " (unsupported: route not defined)\r\n");
+                } else {
+                    UART_sendString("\r\n");
+                }
+            }
+            return;
+        }
+        UART_sendString(
+            "TASK_FORMAT_ERROR usage: Q1..Q6 | QS | Q0 | Q\r\n");
+        return;
+    }
+
     /* 任何手动运动命令都会退出自动巡线，避免两个控制源同时写车轮目标值。 */
-    if (gLineTrackingEnabled && (command != 'I') &&
+    if (TaskExecutor_isRunning(&gTaskExecutor) &&
+        ((command == 'X') || (command == 'T') ||
+         (command == 'F') || (command == 'B') ||
+         (command == 'L') || (command == 'R') ||
+         (command == 'W') || (command == 'I'))) {
+        TaskExecutor_reset(&gTaskExecutor);
+    }
+
+    if (LineTracking_isEnabled(&gLineTracking) && (command != 'I') &&
         ((command == 'X') || (command == 'T') ||
          (command == 'F') || (command == 'B') ||
          (command == 'L') || (command == 'R') ||
          (command == 'W'))) {
-        gLineTrackingEnabled = false;
-        gLineTrackingDebugEnabled = false;
-        LineTracking_resetPid();
+        LineTracking_setEnabled(&gLineTracking, false);
+        LineTracking_setDebugEnabled(&gLineTracking, false);
+        LineTracking_reset(&gLineTracking);
     }
 
     /* F/B 后的 L/R 表示弧线方向，T 后的 L/R 表示定角转向方向。 */
@@ -1049,12 +898,13 @@ static void Car_processUartCommand(void)
     }
 
     if (command == 'X') {
+        TaskExecutor_reset(&gTaskExecutor);
         AngleTurnControl_cancel(&gAngleTurn);
         /* X 为急停：立即撤销驱动，不等待速度 PID 缓慢减速。 */
         CarControl_emergencyStop(&gCar);
-        gLineTrackingEnabled = false;
-        gLineTrackingDebugEnabled = false;
-        LineTracking_resetPid();
+        LineTracking_setEnabled(&gLineTracking, false);
+        LineTracking_setDebugEnabled(&gLineTracking, false);
+        LineTracking_reset(&gLineTracking);
         UART_sendString("STOPPED\r\n");
         return;
     }
@@ -1099,9 +949,9 @@ static void Car_processUartCommand(void)
             }
 
             if (newSpeed == 0U) {
-                gLineTrackingEnabled = false;
-                gLineTrackingDebugEnabled = false;
-                LineTracking_resetPid();
+                LineTracking_setEnabled(&gLineTracking, false);
+                LineTracking_setDebugEnabled(&gLineTracking, false);
+                LineTracking_reset(&gLineTracking);
                 CarControl_stop(&gCar);
                 UART_sendString("LINE_STOPPED\r\n");
                 return;
@@ -1118,20 +968,22 @@ static void Car_processUartCommand(void)
         }
 
         if (setSpeed) {
-            gLineTrackingBaseSpeedRpm = (int16_t) newSpeed;
+            LineTracking_setSpeed(&gLineTracking, (int16_t) newSpeed);
         }
-        if (gLineTrackingBaseSpeedRpm < 1) {
-            gLineTrackingBaseSpeedRpm = CAR_DEFAULT_SPEED_RPM;
+        if (LineTracking_getSpeed(&gLineTracking) < 1) {
+            LineTracking_setSpeed(
+                &gLineTracking, CAR_DEFAULT_SPEED_RPM);
         }
 
-        gLineTrackingEnabled = true;
-        gLineTrackingDebugEnabled = debug;
-        LineTracking_resetPid();
+        TaskExecutor_reset(&gTaskExecutor);
+        LineTracking_setEnabled(&gLineTracking, true);
+        LineTracking_setDebugEnabled(&gLineTracking, debug);
+        LineTracking_reset(&gLineTracking);
         AngleTurnControl_cancel(&gAngleTurn);
         CarControl_stop(&gCar);
 
         UART_sendString("LINE_STARTED speed=");
-        UART_sendInt32((int32_t) gLineTrackingBaseSpeedRpm);
+        UART_sendInt32((int32_t) LineTracking_getSpeed(&gLineTracking));
         UART_sendString(debug ? " debug=1\r\n" : " debug=0\r\n");
         return;
     }
@@ -1395,13 +1247,11 @@ static void Car_processUartCommand(void)
 
 int main(void)
 {
-    bool oledReady;
-
     /* 先执行 SysConfig 生成的时钟、GPIO、定时器、UART 和 I2C 初始化。 */
     SYSCFG_DL_init();
 
-    /* OLED 自检失败不会阻止小车启动，结果稍后通过串口报告。 */
-    oledReady = OLED_Test_initAndShowHelloWorld();
+    /* OLED 失败不会阻止车辆控制；后续显示接口共享该在线标志。 */
+    gOledReady = OLED_Init();
 
     /*
      * 依赖顺序：先初始化四个底层电机，再初始化整车运动和定角转向模块。
@@ -1417,14 +1267,34 @@ int main(void)
     Grayscale_Sensor_Init();
 
     /* 巡线默认关闭，但预装一个可直接使用的基础速度。 */
-    gLineTrackingEnabled = false;
-    gLineTrackingDebugEnabled = false;
-    gLineTrackingBaseSpeedRpm = CAR_DEFAULT_SPEED_RPM;
-    LineTracking_resetPid();
+    {
+        const LineTracking_Config lineConfig = {
+            .car = &gCar,
+            .sendString = UART_sendString,
+            .sendInt32 = UART_sendInt32,
+        };
+        const TaskExecutor_Config taskConfig = {
+            .car = &gCar,
+            .lineTracking = &gLineTracking,
+            .motors = {&gMotorA, &gMotorB, &gMotorC, &gMotorD},
+            .log = UART_sendString,
+            .logInt32 = UART_sendInt32,
+            .oledReady = &gOledReady,
+        };
+
+        LineTracking_init(&gLineTracking, &lineConfig,
+            CAR_DEFAULT_SPEED_RPM);
+        TaskManager_init();
+        if (gOledReady) {
+            gOledReady = OLED_ShowTask(
+                (uint8_t) TaskManager_getSelected());
+        }
+        TaskExecutor_init(&gTaskExecutor, &taskConfig);
+    }
 
     /* 输出各外设自检结果；MPU6050 标定期间必须保持车体静止约 5 秒。 */
     UART_printBanner();
-    UART_sendString(oledReady ? "OLED: Hello World displayed.\r\n"
+    UART_sendString(gOledReady ? "OLED: task display ready.\r\n"
                               : "OLED init failed: check I2C address/wiring.\r\n");
     UART_sendString(
         "MPU6050: keep car still for 5 seconds (calibrating)...\r\n");
@@ -1501,8 +1371,37 @@ int main(void)
             }
 
             /* 巡线与 MPU6050 共用稳定的 10 ms 软件任务节拍。 */
-            if (gLineTrackingEnabled) {
-                LineTracking_update();
+            TaskManager_update10ms();
+            if (TaskManager_takeChangePressed()) {
+                if (TaskExecutor_isRunning(&gTaskExecutor)) {
+                    UART_sendString(
+                        "TASK_BUSY (PA13 change ignored while running)\r\n");
+                } else {
+                    TaskId selected =
+                        TaskManager_selectNextSupported();
+
+                    if (gOledReady) {
+                        gOledReady =
+                            OLED_ShowTask((uint8_t) selected);
+                    }
+                    UART_sendString("TASK_SELECTED ");
+                    UART_sendInt32((int32_t) selected);
+                    UART_sendString(" (PA13)\r\n");
+                }
+            }
+            if (TaskManager_takeStartPressed()) {
+                if (!TaskExecutor_isRunning(&gTaskExecutor)) {
+                    AngleTurnControl_cancel(&gAngleTurn);
+                    LineTracking_setEnabled(&gLineTracking, false);
+                    LineTracking_reset(&gLineTracking);
+                }
+                (void) TaskExecutor_startSelected(&gTaskExecutor);
+            }
+            TaskExecutor_update10ms(&gTaskExecutor);
+
+            if (LineTracking_isEnabled(&gLineTracking) &&
+                !TaskExecutor_isRunning(&gTaskExecutor)) {
+                LineTracking_update(&gLineTracking);
             }
         }
 
@@ -1554,6 +1453,7 @@ void TIMER_PID_INST_IRQHandler(void)
     /* 10 ms 实时节拍：四路速度环必须在中断内按固定周期更新。 */
     switch (DL_TimerA_getPendingInterrupt(TIMER_PID_INST)) {
         case DL_TIMER_IIDX_ZERO:
+            SystemTime_tick10ms();
             MotorControl_update(&gMotorA);
             MotorControl_update(&gMotorB);
             MotorControl_update(&gMotorC);

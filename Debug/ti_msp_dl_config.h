@@ -190,12 +190,6 @@ extern "C" {
 
 
 
-/* Port definition for Pin Group GPIO_BTN */
-#define GPIO_BTN_PORT                                                    (GPIOA)
-
-/* Defines for PIN_START: GPIOA.29 with pinCMx 4 on package pin 36 */
-#define GPIO_BTN_PIN_START_PIN                                  (DL_GPIO_PIN_29)
-#define GPIO_BTN_PIN_START_IOMUX                                  (IOMUX_PINCM4)
 /* Defines for AIN_1: GPIOB.1 with pinCMx 13 on package pin 48 */
 #define GPIO_MOTOR_A_AIN_1_PORT                                          (GPIOB)
 #define GPIO_MOTOR_A_AIN_1_PIN                                   (DL_GPIO_PIN_1)
@@ -286,6 +280,15 @@ extern "C" {
 #define GPIO_GRAYSCALE_OUT_PORT                                          (GPIOA)
 #define GPIO_GRAYSCALE_OUT_PIN                                  (DL_GPIO_PIN_12)
 #define GPIO_GRAYSCALE_OUT_IOMUX                                 (IOMUX_PINCM34)
+/* Port definition for Pin Group GPIO_BTN */
+#define GPIO_BTN_PORT                                                    (GPIOA)
+
+/* Defines for PIN_START: GPIOA.29 with pinCMx 4 on package pin 36 */
+#define GPIO_BTN_PIN_START_PIN                                  (DL_GPIO_PIN_29)
+#define GPIO_BTN_PIN_START_IOMUX                                  (IOMUX_PINCM4)
+/* Defines for PIN_CHANGE: GPIOA.13 with pinCMx 35 on package pin 6 */
+#define GPIO_BTN_PIN_CHANGE_PIN                                 (DL_GPIO_PIN_13)
+#define GPIO_BTN_PIN_CHANGE_IOMUX                                (IOMUX_PINCM35)
 
 
 /* clang-format on */

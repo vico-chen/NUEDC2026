@@ -24,6 +24,7 @@ void CarControl_init(CarControl *car, const CarControl_Config *config)
     car->config = *config;
     car->speedRpm = config->defaultSpeedRpm;
     car->turnInnerPercent = config->defaultTurnInnerPercent;
+    car->motion = CAR_CONTROL_FORWARD;
     CarControl_stop(car);
 }
 
@@ -75,6 +76,7 @@ void CarControl_setMotion(CarControl *car, CarControl_Motion motion,
 
     car->speedRpm = speedRpm;
     car->turnInnerPercent = turnInnerPercent;
+    car->motion = motion;
     /* 使用 32 位中间值，避免 16 位乘法溢出。 */
     innerWheelRpm = (int16_t) (((int32_t) speedRpm *
         turnInnerPercent) / 100);
@@ -132,4 +134,9 @@ int16_t CarControl_getSpeedRpm(const CarControl *car)
 uint8_t CarControl_getTurnInnerPercent(const CarControl *car)
 {
     return car->turnInnerPercent;
+}
+
+CarControl_Motion CarControl_getMotion(const CarControl *car)
+{
+    return car->motion;
 }
