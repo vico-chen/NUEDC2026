@@ -84,10 +84,9 @@ main.o: ../main.c \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/dl_wwdt.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h \
  E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h \
- ../motor_control.h ../car_control.h ../mpu6050_angle.h \
- ../angle_turn_control.h ../grayscale_sensor.h ../line_tracking.h \
- ../oled.h ../task_manager.h ../task_executor.h ../lap_task_control.h \
- ../straight_task_control.h ../stopwatch.h
+ ../motor_control.h ../car_control.h ../grayscale_sensor.h \
+ ../line_tracking.h ../oled.h ../task_manager.h ../task_executor.h \
+ ../lap_task_control.h ../straight_task_control.h ../stopwatch.h
 ti_msp_dl_config.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/msp/msp.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/devices/DeviceFamily.h:
@@ -173,8 +172,6 @@ E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_interrupt.h:
 E:/ti/ccs2100/mspm0_sdk_2_11_00_07/source/ti/driverlib/m0p/dl_systick.h:
 ../motor_control.h:
 ../car_control.h:
-../mpu6050_angle.h:
-../angle_turn_control.h:
 ../grayscale_sensor.h:
 ../line_tracking.h:
 ../oled.h:

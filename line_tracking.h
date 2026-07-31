@@ -25,9 +25,11 @@ typedef struct {
     bool filterReady;
     bool errorFilterReady;
     int16_t baseSpeedRpm;
+    int16_t lostLineRecoveryRpmOffset;
     float integral;
     float filteredError;
     int16_t lastError;
+    int8_t lastLineDirection;       /* 最后一次看到线路时的偏差方向 */
     uint8_t debugDivider;
     uint8_t filteredValues[GRAYSCALE_SENSOR_CHANNELS];
     uint8_t pendingValues[GRAYSCALE_SENSOR_CHANNELS];
@@ -44,6 +46,9 @@ bool LineTracking_isEnabled(const LineTracking *tracking);
 void LineTracking_setDebugEnabled(LineTracking *tracking, bool enabled);
 void LineTracking_setSpeed(LineTracking *tracking, int16_t speedRpm);
 int16_t LineTracking_getSpeed(const LineTracking *tracking);
+/* 设置八路全部无效时使用的最小左右轮目标转速差。 */
+void LineTracking_setLostLineRecoveryRpmOffset(
+    LineTracking *tracking, int16_t rpmOffset);
 
 uint8_t LineTracking_readActiveMask(void);
 uint8_t LineTracking_readActiveCount(void);

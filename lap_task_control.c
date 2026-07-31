@@ -211,6 +211,9 @@ bool LapTaskControl_start(LapTaskControl *control, uint8_t taskNumber,
             profile->finishAdvanceMm, profile->wheelDiameterMm);
 
     LineTracking_setSpeed(control->config.lineTracking, 0);
+    LineTracking_setLostLineRecoveryRpmOffset(
+        control->config.lineTracking,
+        profile->lostLineRecoveryRpmOffset);
     LineTracking_setDebugEnabled(control->config.lineTracking, false);
     LineTracking_reset(control->config.lineTracking);
     LineTracking_setEnabled(control->config.lineTracking, true);
@@ -235,6 +238,8 @@ void LapTaskControl_reset(LapTaskControl *control)
     control->finishEncoderCount = 0U;
     control->finishTargetEncoderCount = 0U;
     LineTracking_setEnabled(control->config.lineTracking, false);
+    LineTracking_setLostLineRecoveryRpmOffset(
+        control->config.lineTracking, 0);
     LineTracking_setDebugEnabled(control->config.lineTracking, false);
     LineTracking_reset(control->config.lineTracking);
     CarControl_stop(control->config.car);

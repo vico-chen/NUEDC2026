@@ -14,6 +14,7 @@
 typedef struct {
     int16_t cruiseRpm;                    /* 弯道及普通巡线目标转速 */
     int16_t straightRpm;                  /* 连续直行时使用的较高目标转速 */
+    int16_t lostLineRecoveryRpmOffset;     /* 丢线回正时的最小左右轮 RPM 差 */
     uint16_t accelerationSamples;         /* 从 0 加速至巡航速度的周期数 */
     uint16_t straightAccelerationSamples; /* 巡航速度与直线速度间过渡的周期数 */
     uint8_t intersectionActiveThreshold;  /* 判定十字路口所需有效通道数 */

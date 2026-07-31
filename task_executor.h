@@ -34,7 +34,7 @@ typedef struct {
     StraightTaskControl straightTask;        /* 直行任务状态机 */
     TaskExecutor_Module activeModule;        /* 当前活动模块 */
     TaskManager_Task selectedTask;           /* 按键选中的任务号 */
-    uint64_t lastStopwatchDisplayMs;         /* 上次刷新计时器的时刻 */
+    uint64_t lastStopwatchDisplayMs;         /* 所有任务共用的计时显示刷新时刻 */
 } TaskExecutor;
 
 /* 初始化、紧急复位、周期调度以及运行状态查询接口。 */

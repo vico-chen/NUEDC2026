@@ -24,6 +24,7 @@ void LineTracking_reset(LineTracking *tracking)
     tracking->integral = 0.0f;
     tracking->filteredError = 0.0f;
     tracking->lastError = 0;
+    tracking->lastLineDirection = 0;
     tracking->debugDivider = 0U;
     tracking->filterReady = false;
     tracking->errorFilterReady = false;
@@ -42,6 +43,7 @@ void LineTracking_init(LineTracking *tracking,
     tracking->enabled = false;
     tracking->debugEnabled = false;
     tracking->baseSpeedRpm = defaultSpeedRpm;
+    tracking->lostLineRecoveryRpmOffset = 0;
     LineTracking_reset(tracking);
 }
 
@@ -68,6 +70,14 @@ void LineTracking_setSpeed(LineTracking *tracking, int16_t speedRpm)
 int16_t LineTracking_getSpeed(const LineTracking *tracking)
 {
     return tracking->baseSpeedRpm;
+}
+
+void LineTracking_setLostLineRecoveryRpmOffset(
+    LineTracking *tracking, int16_t rpmOffset)
+{
+    /* 负数没有物理意义；设置为 0 可关闭终极回正增强。 */
+    tracking->lostLineRecoveryRpmOffset =
+        (rpmOffset > 0) ? rpmOffset : 0;
 }
 
 /* 对八路数字灰度结果进行软件消抖。 */
@@ -117,7 +127,7 @@ static int16_t LineTracking_computeError(LineTracking *tracking,
     const uint8_t values[GRAYSCALE_SENSOR_CHANNELS])
 {
     static const int16_t weights[GRAYSCALE_SENSOR_CHANNELS] = {
-        -30, -20, -15, 0, 0, 15, 20, 30
+        -60, -40, -15, 0, 0, 15, 40, 60
     };
     int32_t weightedSum = 0;
     uint8_t activeCount = 0U;
@@ -152,14 +162,15 @@ static int16_t LineTracking_computeError(LineTracking *tracking,
             (error >= -LINE_ERR_DEADBAND)) {
             return 0;
         }
+        tracking->lastLineDirection = (error > 0) ? 1 : -1;
         return error;
     }
 
-    /* 丢线后沿上一次偏差方向继续寻找线路。 */
-    if (tracking->lastError > 0) {
+    /* 丢线后沿最后一次看到线路时的偏差方向继续寻找。 */
+    if (tracking->lastLineDirection > 0) {
         return LINE_ERR_ABS_FALLBACK;
     }
-    if (tracking->lastError < 0) {
+    if (tracking->lastLineDirection < 0) {
         return (int16_t) (-LINE_ERR_ABS_FALLBACK);
     }
     return 0;
@@ -271,6 +282,23 @@ void LineTracking_update(LineTracking *tracking)
     pid = (LINE_PID_KP * (float) error) +
         (LINE_PID_KI * tracking->integral) +
         (LINE_PID_KD * derivative);
+
+    /*
+     * 八路全部无有效信息表示车辆已经跑出赛道。
+     * 此时沿最后一次偏差方向继续搜索，并保证左右轮差速不低于
+     * lostLineRecoveryRpmOffset，以获得更大的回正角速度。
+     */
+    if ((activeCount == 0U) && (rawError != 0) &&
+        (tracking->lostLineRecoveryRpmOffset > 0)) {
+        float recoveryOffset =
+            (float) tracking->lostLineRecoveryRpmOffset;
+
+        if ((rawError > 0) && (pid < recoveryOffset)) {
+            pid = recoveryOffset;
+        } else if ((rawError < 0) && (pid > -recoveryOffset)) {
+            pid = -recoveryOffset;
+        }
+    }
 
     if (pid > (float) tracking->baseSpeedRpm) {
         pid = (float) tracking->baseSpeedRpm;

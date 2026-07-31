@@ -12,10 +12,11 @@
 const LapTask_Profile gLapTask2Profile = {
     .cruiseRpm = 150,
     .straightRpm = 280,
-    .accelerationSamples = 80U,
-    .straightAccelerationSamples = 50U,
+    .lostLineRecoveryRpmOffset = 160,
+    .accelerationSamples = 30U,
+    .straightAccelerationSamples = 80U,
     .intersectionActiveThreshold = 4U,
-    .intersectionConfirmSamples = 2U,
+    .intersectionConfirmSamples = 1U,
     .finishAdvanceMm = 100U,
     .wheelDiameterMm = 65U,
     .decelerationEndRpm = 10,
@@ -25,8 +26,9 @@ const LapTask_Profile gLapTask2Profile = {
 };
 
 const LapTask_Profile gLapTask5Profile = {
-    .cruiseRpm = 130,
-    .straightRpm = 130,
+    .cruiseRpm = 140,
+    .straightRpm = 140,
+    .lostLineRecoveryRpmOffset = 0,
     .accelerationSamples = 600U,
     .straightAccelerationSamples = 0U,
     .intersectionActiveThreshold = 4U,
@@ -40,8 +42,9 @@ const LapTask_Profile gLapTask5Profile = {
 };
 
 const LapTask_Profile gLapTask6Profile = {
-    .cruiseRpm = 130,
-    .straightRpm = 130,
+    .cruiseRpm = 140,
+    .straightRpm = 140,
+    .lostLineRecoveryRpmOffset = 0,
     .accelerationSamples = 600U,
     .straightAccelerationSamples = 0U,
     .intersectionActiveThreshold = 4U,
@@ -61,7 +64,7 @@ const LapTask_Profile gLapTask6Profile = {
 const StraightTask_Profile gStraightTask4Profile = {
     .targetDistanceMm = 2100U,
     .wheelDiameterMm = 65U,
-    .cruiseRpm = 160,
+    .cruiseRpm = 180,
     .accelerationSamples = 300U,
     .decelerationDistanceMm = 800U,
     .decelerationSamples = 300U,

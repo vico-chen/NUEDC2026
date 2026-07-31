@@ -36,7 +36,9 @@ static void TaskExecutor_stopActiveModule(TaskExecutor *executor)
     LapTaskControl_reset(&executor->lapTask);
     StraightTaskControl_reset(&executor->straightTask);
     executor->activeModule = TASK_EXECUTOR_MODULE_NONE;
-    // Stopwatch_stop();
+    if (Stopwatch_isEnabled()) {
+        Stopwatch_stop();
+    }
 }
 
 static bool TaskExecutor_startSelected(TaskExecutor *executor)
@@ -72,15 +74,23 @@ static bool TaskExecutor_startSelected(TaskExecutor *executor)
                 TASK_EXECUTOR_MODULE_STRAIGHT;
         }
     } else {
-        /* 未配置执行模块的任务只提示，不允许车辆动作。 */
+        /*
+         * Task1、Task3 当前没有自动驾驶模组，但仍允许启动公共秒表，
+         * 方便进行手动调试、计时和 OLED 显示。
+         */
         TaskExecutor_log(executor,
-            "TASK3 HAS NO CONTROL MODULE\r\n");
+            "TASK HAS NO CONTROL MODULE, TIMER ONLY\r\n");
+        started = true;
     }
 
     if (started) {
-        /* 只有模块启动成功后才启动秒表。 */
+        /* 所有任务统一从按下启动键的时刻开始计时。 */
         Stopwatch_start();
         executor->lastStopwatchDisplayMs = systick_ms;
+        if (executor->config.oledReady) {
+            executor->config.oledReady =
+                OLED_ShowStopwatch(0U);
+        }
     } else {
         executor->activeModule = TASK_EXECUTOR_MODULE_NONE;
     }
@@ -148,7 +158,8 @@ void TaskExecutor_update(TaskExecutor *executor,
      * 先复位旧模块并停车，再记录新的任务号。
      */
     if (selectedTask != executor->selectedTask) {
-        if (TaskExecutor_isRunning(executor)) {
+        if (TaskExecutor_isRunning(executor) ||
+            Stopwatch_isEnabled()) {
             TaskExecutor_stopActiveModule(executor);
             TaskExecutor_log(executor,
                 "TASK SELECTION CHANGED, STOPPED\r\n");
@@ -156,9 +167,24 @@ void TaskExecutor_update(TaskExecutor *executor,
         executor->selectedTask = selectedTask;
     }
 
-    /* 启动按键只在当前没有任务运行时生效。 */
+    /* 启动按键只在当前没有自动任务或纯计时任务运行时生效。 */
     if (startPressed) {
-        if (TaskExecutor_isRunning(executor)) {
+        if (Stopwatch_isEnabled() &&
+            (executor->activeModule ==
+                TASK_EXECUTOR_MODULE_NONE)) {
+            /*
+             * 纯计时任务没有状态机结束条件，再按一次启动键即可
+             * 停止计时并在 OLED 上保留最终时间。
+             */
+            Stopwatch_stop();
+            if (executor->config.oledReady) {
+                executor->config.oledReady =
+                    OLED_ShowStopwatch(Stopwatch_getCurrentMs());
+            }
+            TaskExecutor_log(executor,
+                "TIMER ONLY TASK STOPPED\r\n");
+        } else if (TaskExecutor_isRunning(executor) ||
+            Stopwatch_isEnabled()) {
             TaskExecutor_log(executor, "TASK ALREADY RUNNING\r\n");
         } else {
             (void) TaskExecutor_startSelected(executor);
@@ -174,8 +200,21 @@ void TaskExecutor_update(TaskExecutor *executor,
         StraightTaskControl_update(&executor->straightTask);
     }
 
-    /* 任务运行期间每 500 ms 把当前用时刷新到 OLED。 */
-    if (TaskExecutor_isRunning(executor) &&
+    /*
+     * 自动任务刚完成时冻结秒表，并立即显示最终成绩。
+     * Task1、Task3 是纯计时任务，没有自动完成条件。
+     */
+    if (wasRunning && !TaskExecutor_isRunning(executor) &&
+        Stopwatch_isEnabled()) {
+        Stopwatch_stop();
+        if (executor->config.oledReady) {
+            executor->config.oledReady =
+                OLED_ShowStopwatch(Stopwatch_getCurrentMs());
+        }
+    }
+
+    /* 秒表运行期间每 500 ms 刷新 OLED，适用于全部六个任务。 */
+    if (Stopwatch_isEnabled() &&
         ((systick_ms - executor->lastStopwatchDisplayMs) >= 500U)) {
         if (executor->config.oledReady) {
             executor->config.oledReady =

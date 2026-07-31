@@ -33,8 +33,6 @@
 #include "ti_msp_dl_config.h"
 #include "motor_control.h"
 #include "car_control.h"
-#include "mpu6050_angle.h"
-#include "angle_turn_control.h"
 #include "grayscale_sensor.h"
 #include "line_tracking.h"
 #include "oled.h"
@@ -53,8 +51,6 @@
 #define UART3_FORWARD_BYTES_PER_SERVICE (16U)
 #define CAR_DEFAULT_SPEED_RPM (200)
 #define CAR_DEFAULT_TURN_INNER_PERCENT (50U)
-#define ANGLE_TURN_DEFAULT_MAX_RPM (100)
-#define ANGLE_TURN_LEFT_YAW_SIGN (1)
 #define GRAYSCALE_STREAM_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
 
 /*
@@ -178,7 +174,7 @@ static const MotorControl_Config gMotorDConfig = {
     .zeroSpeedBrakeMaxPercent = 40.0f,
 };
 
-/* ======================== 车辆与定角转向配置 ======================== */
+/* ======================== 车辆运动配置 ======================== */
 static CarControl gCar;
 static const CarControl_Config gCarConfig = {
     .rightRearMotor = &gMotorA,
@@ -194,30 +190,11 @@ static const CarControl_Config gCarConfig = {
     .defaultTurnInnerPercent = CAR_DEFAULT_TURN_INNER_PERCENT,
 };
 
-static AngleTurnControl gAngleTurn;
-static const AngleTurnControl_Config gAngleTurnConfig = {
-    .car = &gCar,
-    /*
-     * With the module horizontal and +Z upward, left/CCW yaw is positive.
-     * Change to -1 if a manual left turn makes the reported Y angle decrease.
-     */
-    .leftTurnYawSign = ANGLE_TURN_LEFT_YAW_SIGN,
-    .defaultCruiseRpm = ANGLE_TURN_DEFAULT_MAX_RPM,
-    .creepRpm = 40,
-    .brakeRateGain = 0.10f,
-    .brakeAheadMaxDegrees = 12.0f,
-    /* Was 2.0 deg and caused a repeatable ~88 deg result on 90 deg commands. */
-    .angleToleranceDegrees = 0.4f,
-    .stoppedRateToleranceDps = 6.0f,
-    .settleSamples = 15U,
-    .timeoutSamples = 1500U,
-};
-
 /* ======================== 串口接收与外设状态 ======================== */
 static volatile char gUartCommand[UART_COMMAND_BUFFER_SIZE];
 static volatile uint8_t gUartCommandLength;
 static volatile bool gUartCommandReady;
-static volatile bool gMpu6050SampleDue;
+static volatile bool gControlSampleDue;
 
 /* OpenMV 串口接收监视，由 UART0 的 O/O1/O0 命令控制。 */
 static volatile uint8_t
@@ -238,7 +215,6 @@ static volatile uint8_t gUart3ForwardRxHead;
 static volatile uint8_t gUart3ForwardRxTail;
 static volatile bool gUart3ForwardRxOverflow;
 
-static bool gMpu6050Ready;
 static bool gOledReady;
 static bool gGrayscaleStreamEnabled;
 static uint8_t gGrayscaleStreamDivider;
@@ -251,14 +227,6 @@ static bool gMotorStatusReportOnce;
 
 /* 全局毫秒时基，同时提供给 stopwatch.c 读取。 */
 volatile uint64_t systick_ms = 0;
-
-/* MPU6050 标定期间把剩余秒数显示到 OLED。 */
-static void OLED_showCalibrationProgress(uint8_t secondsRemaining)
-{
-    if (gOledReady) {
-        gOledReady = OLED_ShowCalibration(secondsRemaining);
-    }
-}
 
 /* 通过调试串口 UART0 阻塞发送一个以 '\0' 结尾的字符串。 */
 static void UART_sendString(const char *text)
@@ -337,10 +305,6 @@ static void UART_printHelp(void)
     UART_sendString("  FL 200 70   forward+left arc\r\n");
     UART_sendString("  default rpm=200, inner%=50\r\n");
     UART_sendString("\r\n");
-    UART_sendString("[Angle]   TL/TR angle [rpm]\r\n");
-    UART_sendString("  TL 90       left 90 deg (def 100rpm)\r\n");
-    UART_sendString("  TR 45 80    right 45 deg @80rpm\r\n");
-    UART_sendString("\r\n");
     UART_sendString("[Single]  WA/WB/WC/WD [signed rpm]\r\n");
     UART_sendString("  wheels: C-B front, D-A rear\r\n");
     UART_sendString("  WA 200 / WB -150 / WA(=0 stop)\r\n");
@@ -352,7 +316,6 @@ static void UART_printHelp(void)
     UART_sendString("  I1        start with debug prints\r\n");
     UART_sendString("\r\n");
     UART_sendString("[Status]\r\n");
-    UART_sendString("  Y / Y0      yaw read / reset\r\n");
     UART_sendString("  G / G1 / G0 grayscale once/VOFA stream/off\r\n");
     UART_sendString("  M / M1 / M0 motor once/VOFA FireWater stream/off\r\n");
     UART_sendString("  O / O1 / O0 OpenMV RX status/on/off\r\n");
@@ -525,35 +488,6 @@ static void UART_serviceMotorStatus(void)
         }
     }
 }
-/* 输出 MPU6050 当前累计 Z 轴角度和角速度。 */
-static void UART_reportZAngle(void)
-{
-    float angle = MPU6050_Angle_getZDegrees();
-    int32_t angleTimes10;
-    uint32_t magnitude;
-
-    if (!gMpu6050Ready) {
-        UART_sendString("MPU6050_ERROR\r\n");
-        return;
-    }
-
-    angleTimes10 =
-        (int32_t) ((angle >= 0.0f) ? (angle * 10.0f + 0.5f)
-                                   : (angle * 10.0f - 0.5f));
-    UART_sendString("z_angle=");
-    if (angleTimes10 < 0) {
-        DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) '-');
-        magnitude = (uint32_t) (-(angleTimes10 + 1)) + 1U;
-    } else {
-        magnitude = (uint32_t) angleTimes10;
-    }
-    UART_sendInt32((int32_t) (magnitude / 10U));
-    DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) '.');
-    DL_UART_Main_transmitDataBlocking(
-        UART_0_INST, (uint8_t) ('0' + (magnitude % 10U)));
-    UART_sendString(" deg\r\n");
-}
-
 /* 读取并输出一次八路灰度传感器的数字状态。 */
 static void UART_reportGrayscale(void)
 {
@@ -746,7 +680,6 @@ static void Car_setSingleMotorChassisRpm(
             return;
     }
 
-    AngleTurnControl_cancel(&gAngleTurn);
     motorRpm = (int16_t) (chassisRpm * forwardSign);
     MotorControl_setTargetRpm(motor, motorRpm);
 
@@ -757,71 +690,6 @@ static void Car_setSingleMotorChassisRpm(
     UART_sendString(" motor_rpm=");
     UART_sendInt32((int32_t) motorRpm);
     UART_sendString("\r\n");
-}
-
-/* 解析定角转向命令中的角度和可选 RPM。 */
-static bool Car_parseAngleTurnParameters(
-    uint8_t startIndex, float *angleDegrees, int16_t *maximumRpm)
-{
-    uint8_t index = startIndex;
-    uint16_t wholeDegrees;
-    uint16_t fractionalTenths = 0U;
-    uint16_t rpm;
-    uint16_t angleTenths;
-
-    while ((gUartCommand[index] == ' ') ||
-           (gUartCommand[index] == '\t')) {
-        index++;
-    }
-    if (!Car_parseUnsignedValue(&index, 360U, &wholeDegrees)) {
-        return false;
-    }
-
-    if (gUartCommand[index] == '.') {
-        index++;
-        if ((gUartCommand[index] < '0') ||
-            (gUartCommand[index] > '9')) {
-            return false;
-        }
-        fractionalTenths =
-            (uint16_t) (gUartCommand[index] - '0');
-        index++;
-    }
-    if ((gUartCommand[index] != '\0') &&
-        (gUartCommand[index] != ' ') &&
-        (gUartCommand[index] != '\t')) {
-        return false;
-    }
-
-    angleTenths =
-        (uint16_t) (wholeDegrees * 10U + fractionalTenths);
-    if ((angleTenths == 0U) || (angleTenths > 3600U)) {
-        return false;
-    }
-
-    while ((gUartCommand[index] == ' ') ||
-           (gUartCommand[index] == '\t')) {
-        index++;
-    }
-    *maximumRpm = ANGLE_TURN_DEFAULT_MAX_RPM;
-    if (gUartCommand[index] != '\0') {
-        if (!Car_parseUnsignedValue(
-                &index, MOTOR_MAX_TARGET_RPM, &rpm) ||
-            (rpm == 0U)) {
-            return false;
-        }
-        *maximumRpm = (int16_t) rpm;
-        while ((gUartCommand[index] == ' ') ||
-               (gUartCommand[index] == '\t')) {
-            index++;
-        }
-    }
-
-    if (gUartCommand[index] != '\0') {
-        return false;
-    }
-    *angleDegrees = (float) angleTenths / 10.0f;
-    return true;
 }
 
 /* 解析普通车辆动作命令的速度和内侧轮比例。 */
@@ -881,8 +749,6 @@ static void Car_processUartCommand(void)
     char turnCommand = '\0';
     CarControl_Motion motion;
     int16_t speedRpm;
-    int16_t angleTurnMaximumRpm;
-    float angleTurnDegrees;
     uint8_t turnInnerPercent;
     bool speedSpecified;
     bool turnSpecified;
@@ -939,16 +805,15 @@ static void Car_processUartCommand(void)
     /* 手动运动命令优先级更高，执行前先终止正在运行的自动任务。 */
     if (TaskExecutor_isRunning(&gTaskExecutor) &&
         ((command == 'I') || (command == 'X') ||
-         (command == 'T') || (command == 'F') ||
-         (command == 'B') || (command == 'L') ||
-         (command == 'R') || (command == 'W'))) {
+         (command == 'F') || (command == 'B') ||
+         (command == 'L') || (command == 'R') ||
+         (command == 'W'))) {
         TaskExecutor_reset(&gTaskExecutor);
     }
 
     /* 关闭手动巡线，避免它和新的运动命令同时控制车辆。 */
     if (LineTracking_isEnabled(&gLineTracking) && (command != 'I') &&
-        ((command == 'X') || (command == 'T') ||
-         (command == 'F') || (command == 'B') ||
+        ((command == 'X') || (command == 'F') || (command == 'B') ||
          (command == 'L') || (command == 'R') ||
          (command == 'W'))) {
         LineTracking_setEnabled(&gLineTracking, false);
@@ -956,7 +821,7 @@ static void Car_processUartCommand(void)
         LineTracking_reset(&gLineTracking);
     }
 
-    if ((command == 'F') || (command == 'B') || (command == 'T')) {
+    if ((command == 'F') || (command == 'B')) {
         turnCommand = gUartCommand[index];
         if ((turnCommand >= 'a') && (turnCommand <= 'z')) {
             turnCommand = (char) (turnCommand - ('a' - 'A'));
@@ -970,7 +835,6 @@ static void Car_processUartCommand(void)
 
     if (command == 'X') {
         TaskExecutor_reset(&gTaskExecutor);
-        AngleTurnControl_cancel(&gAngleTurn);
         /* X 为紧急停车：立即撤销所有电机驱动。 */
         CarControl_emergencyStop(&gCar);
         LineTracking_setEnabled(&gLineTracking, false);
@@ -1055,39 +919,12 @@ static void Car_processUartCommand(void)
             gMotorStatusReportOnce = false;
         }
         LineTracking_reset(&gLineTracking);
-        AngleTurnControl_cancel(&gAngleTurn);
         CarControl_stop(&gCar);
 
         UART_sendString("LINE_STARTED speed=");
         UART_sendInt32(
             (int32_t) LineTracking_getSpeed(&gLineTracking));
         UART_sendString(debug ? " debug=1\r\n" : " debug=0\r\n");
-        return;
-    }
-    if (command == 'T') {
-        if ((turnCommand == '\0') ||
-            !Car_parseAngleTurnParameters(
-                index, &angleTurnDegrees, &angleTurnMaximumRpm)) {
-            UART_sendString("ANGLE_TURN_FORMAT_ERROR\r\n");
-            UART_sendString("  usage: TL|TR angle [rpm]  e.g. TL 90\r\n");
-            UART_hintHelp();
-            return;
-        }
-        if (!gMpu6050Ready) {
-            UART_sendString("MPU6050_ERROR\r\n");
-            return;
-        }
-
-        if (AngleTurnControl_start(&gAngleTurn,
-                turnCommand == 'L', angleTurnDegrees,
-                angleTurnMaximumRpm)) {
-            UART_sendString("ANGLE_TURN_STARTED ");
-            UART_sendString((turnCommand == 'L') ? "TL " : "TR ");
-            UART_sendInt32((int32_t) (angleTurnDegrees + 0.05f));
-            UART_sendString(" deg @");
-            UART_sendInt32((int32_t) angleTurnMaximumRpm);
-            UART_sendString(" rpm\r\n");
-        }
         return;
     }
     if (command == 'O') {
@@ -1141,38 +978,6 @@ static void Car_processUartCommand(void)
             gOpenMvDebugRxTail = 0U;
             gOpenMvDebugRxOverflow = false;
             UART_sendString("OPENMV_DEBUG_OFF\r\n");
-        }
-        return;
-    }
-    if (command == 'Y') {
-        while ((gUartCommand[index] == ' ') ||
-               (gUartCommand[index] == '\t')) {
-            index++;
-        }
-        if (gUartCommand[index] == '0') {
-            if (AngleTurnControl_isActive(&gAngleTurn)) {
-                UART_sendString("ANGLE_TURN_BUSY\r\n");
-                return;
-            }
-            index++;
-            while ((gUartCommand[index] == ' ') ||
-                   (gUartCommand[index] == '\t')) {
-                index++;
-            }
-            if (gUartCommand[index] == '\0') {
-                MPU6050_Angle_reset();
-                UART_sendString("z_angle reset to 0.0 deg\r\n");
-            } else {
-                UART_sendString("Y_FORMAT_ERROR  usage: Y | Y0\r\n");
-                UART_hintHelp();
-            }
-            return;
-        }
-        if (gUartCommand[index] == '\0') {
-            UART_reportZAngle();
-        } else {
-            UART_sendString("Y_FORMAT_ERROR  usage: Y | Y0\r\n");
-            UART_hintHelp();
         }
         return;
     }
@@ -1356,7 +1161,6 @@ static void Car_processUartCommand(void)
             return;
     }
 
-    AngleTurnControl_cancel(&gAngleTurn);
     CarControl_setMotion(&gCar, motion, speedRpm, turnInnerPercent);
 
     UART_sendString("OK ");
@@ -1393,8 +1197,8 @@ int main(void)
 
     /*
      * OpenMV may send its initial digit immediately after power-up. Enable
-     * UART1 RX before the OLED setup and 5-second MPU calibration so that
-     * this one-shot result is not lost.
+     * UART1 RX before the OLED setup so that an early OpenMV result is not
+     * lost.
      */
     NVIC_ClearPendingIRQ(UART_OPENMV_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_OPENMV_INST_INT_IRQN);
@@ -1412,7 +1216,6 @@ int main(void)
     MotorControl_init(&gMotorC, &gMotorCConfig);
     MotorControl_init(&gMotorD, &gMotorDConfig);
     CarControl_init(&gCar, &gCarConfig);
-    AngleTurnControl_init(&gAngleTurn, &gAngleTurnConfig);
     Grayscale_Sensor_Init();
 
     {
@@ -1428,17 +1231,6 @@ int main(void)
     UART_printBanner();
     UART_sendString(gOledReady ? "OLED ready.\r\n"
                                : "OLED init failed: check I2C address/wiring.\r\n");
-    UART_sendString(
-        "MPU6050: keep car still for 5 seconds (calibrating)...\r\n");
-    gMpu6050Ready = MPU6050_Angle_initWithProgress(
-        OLED_showCalibrationProgress);
-    if (gMpu6050Ready) {
-        UART_sendString("MPU6050 ready, WHO_AM_I=0x");
-        UART_sendHex8((uint8_t) MPU6050_Angle_getDeviceId());
-        UART_sendString("  (Y read, Y0 reset)\r\n");
-    } else {
-        UART_sendString("MPU6050 init failed.\r\n");
-    }
     TaskManager_init(gOledReady);
     {
         TaskExecutor_Config taskConfig = {
@@ -1467,32 +1259,8 @@ int main(void)
     DL_TimerA_startCounter(TIMER_PID_INST);
 
     while (1) {
-        if (gMpu6050SampleDue) {
-            AngleTurnControl_Result angleTurnResult =
-                ANGLE_TURN_RESULT_NONE;
-
-            gMpu6050SampleDue = false;
-            if (gMpu6050Ready) {
-                if (MPU6050_Angle_update()) {
-                    angleTurnResult =
-                        AngleTurnControl_update(&gAngleTurn);
-                } else {
-                    AngleTurnControl_cancel(&gAngleTurn);
-                    gMpu6050Ready = false;
-                    UART_sendString("MPU6050 read failed.\r\n");
-                }
-            }
-
-            if (angleTurnResult == ANGLE_TURN_RESULT_COMPLETED) {
-                UART_sendString("ANGLE_TURN_DONE ");
-                UART_reportZAngle();
-            } else if (angleTurnResult == ANGLE_TURN_RESULT_TIMEOUT) {
-                UART_sendString("ANGLE_TURN_TIMEOUT ");
-                UART_reportZAngle();
-            } else if (angleTurnResult == ANGLE_TURN_RESULT_FAULT) {
-                UART_sendString(
-                    "ANGLE_TURN_FAULT check ANGLE_TURN_LEFT_YAW_SIGN\r\n");
-            }
+        if (gControlSampleDue) {
+            gControlSampleDue = false;
 
             if (gGrayscaleStreamEnabled) {
                 gGrayscaleStreamDivider++;
@@ -1562,7 +1330,7 @@ void GROUP1_IRQHandler(void)
     DL_GPIO_clearInterruptStatus(GPIOA, gpioAInterruptStatus);
 }
 
-/* 10 ms 定时中断：采样编码器、更新四路速度 PID 并置位 MPU 采样。 */
+/* 10 ms 定时中断：采样编码器、更新四路速度 PID 并置位控制周期。 */
 void TIMER_PID_INST_IRQHandler(void)
 {
     switch (DL_TimerA_getPendingInterrupt(TIMER_PID_INST)) {
@@ -1571,7 +1339,7 @@ void TIMER_PID_INST_IRQHandler(void)
             MotorControl_update(&gMotorB);
             MotorControl_update(&gMotorC);
             MotorControl_update(&gMotorD);
-            gMpu6050SampleDue = true;
+            gControlSampleDue = true;
 
             systick_ms += 10;
             break;
