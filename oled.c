@@ -324,6 +324,17 @@ bool OLED_ShowMessage(const char *text)
            OLED_writeCentered(3U, text);
 }
 
+bool OLED_ShowCalibration(uint8_t secondsRemaining)
+{
+    char text[7] = "CAL 5S";
+
+    if (secondsRemaining > 9U) {
+        secondsRemaining = 9U;
+    }
+    text[4] = (char) ('0' + secondsRemaining);
+    return OLED_ShowMessage(text);
+}
+
 bool OLED_ShowTask(uint8_t taskNumber)
 {
     char taskText[7];

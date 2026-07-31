@@ -257,6 +257,14 @@ static uint8_t gGrayscaleStreamDivider;
 static bool gMotorStatusStreamEnabled;
 static bool gMotorStatusReportOnce;
 
+static void OLED_showCalibrationProgress(uint8_t secondsRemaining)
+{
+    if (gOledReady) {
+        gOledReady =
+            OLED_ShowCalibration(secondsRemaining);
+    }
+}
+
 static void UART_sendString(const char *text)
 {
     /* 调试输出采用阻塞发送，保证一条文本内部不会丢字符。 */
@@ -1298,7 +1306,16 @@ int main(void)
                               : "OLED init failed: check I2C address/wiring.\r\n");
     UART_sendString(
         "MPU6050: keep car still for 5 seconds (calibrating)...\r\n");
-    gMpu6050Ready = MPU6050_Angle_init();
+    gMpu6050Ready = MPU6050_Angle_initWithProgress(
+        OLED_showCalibrationProgress);
+    /*
+     * 标定倒计时会覆盖任务选择页面；标定结束后恢复当前任务号。
+     * OLED 故障只关闭后续显示，不影响车辆和 MPU6050 工作。
+     */
+    if (gOledReady) {
+        gOledReady = OLED_ShowTask(
+            (uint8_t) TaskManager_getSelected());
+    }
     if (gMpu6050Ready) {
         UART_sendString("MPU6050 ready, WHO_AM_I=0x");
         UART_sendHex8((uint8_t) MPU6050_Angle_getDeviceId());

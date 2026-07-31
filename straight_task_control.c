@@ -87,13 +87,21 @@ bool StraightTaskControl_start(StraightTaskControl *control,
 {
     if ((profile == 0) || (profile->targetDistanceMm == 0U) ||
         (profile->wheelDiameterMm == 0U) ||
-        (profile->cruiseRpm <= 0)) {
+        (profile->cruiseRpm <= 0) ||
+        (profile->decelerationEndRpm <= 0) ||
+        (profile->decelerationEndRpm > profile->cruiseRpm) ||
+        (profile->decelerationDistanceMm >
+            profile->targetDistanceMm)) {
         return false;
     }
     control->profile = profile;
     control->state = STRAIGHT_TASK_RUNNING;
     control->accelerationSamples = 0U;
+    control->decelerationSamples = 0U;
     control->brakeSamples = 0U;
+    control->commandedRpm = 0;
+    control->decelerationStartRpm = 0;
+    control->decelerationStarted = false;
     control->encoderCount = 0U;
     control->targetEncoderCount = StraightTask_distanceCounts(control,
         profile->targetDistanceMm, profile->wheelDiameterMm);
@@ -102,7 +110,7 @@ bool StraightTaskControl_start(StraightTaskControl *control,
             profile->decelerationDistanceMm,
             profile->wheelDiameterMm);
     CarControl_stop(control->config.car);
-    StraightTask_log(control, "STRAIGHT_TASK_STARTED_2000MM\r\n");
+    StraightTask_log(control, "STRAIGHT_TASK_STARTED\r\n");
     return true;
 }
 
@@ -111,7 +119,11 @@ void StraightTaskControl_reset(StraightTaskControl *control)
     control->profile = 0;
     control->state = STRAIGHT_TASK_IDLE;
     control->accelerationSamples = 0U;
+    control->decelerationSamples = 0U;
     control->brakeSamples = 0U;
+    control->commandedRpm = 0;
+    control->decelerationStartRpm = 0;
+    control->decelerationStarted = false;
     control->encoderCount = 0U;
     control->targetEncoderCount = 0U;
     control->decelerationEncoderCount = 0U;
@@ -140,12 +152,41 @@ void StraightTaskControl_update(StraightTaskControl *control)
             if ((control->decelerationEncoderCount > 0U) &&
                 (remainingCounts <=
                     control->decelerationEncoderCount)) {
-                speedRpm = (int16_t) (
-                    control->profile->decelerationEndRpm +
-                    (((int32_t) (control->profile->cruiseRpm -
-                        control->profile->decelerationEndRpm) *
-                        remainingCounts) /
-                        control->decelerationEncoderCount));
+                /*
+                 * 首次进入末段时保存实际下发速度，此后按固定时间匀减速。
+                 * 时间斜坡完成但距离未到时保持最低速度缓行，最终仍由
+                 * 编码器目标决定停车，避免负载变化造成提前结束。
+                 */
+                if (!control->decelerationStarted) {
+                    control->decelerationStarted = true;
+                    control->decelerationSamples = 0U;
+                    control->decelerationStartRpm =
+                        control->commandedRpm;
+                    if (control->decelerationStartRpm <
+                        control->profile->decelerationEndRpm) {
+                        control->decelerationStartRpm =
+                            control->profile->decelerationEndRpm;
+                    }
+                    StraightTask_log(control,
+                        "STRAIGHT_DECELERATION_STARTED\r\n");
+                }
+
+                if (control->decelerationSamples <
+                    control->profile->decelerationSamples) {
+                    control->decelerationSamples++;
+                }
+                if (control->profile->decelerationSamples == 0U) {
+                    speedRpm =
+                        control->profile->decelerationEndRpm;
+                } else {
+                    speedRpm = (int16_t) (
+                        control->decelerationStartRpm -
+                        (((int32_t) (
+                            control->decelerationStartRpm -
+                            control->profile->decelerationEndRpm) *
+                            control->decelerationSamples) /
+                            control->profile->decelerationSamples));
+                }
             } else {
                 if (control->accelerationSamples <
                     control->profile->accelerationSamples) {
@@ -159,6 +200,7 @@ void StraightTaskControl_update(StraightTaskControl *control)
                         control->accelerationSamples) /
                         control->profile->accelerationSamples);
             }
+            control->commandedRpm = speedRpm;
             CarControl_setMotion(control->config.car,
                 CAR_CONTROL_FORWARD, speedRpm, 100U);
             break;

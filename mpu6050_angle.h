@@ -8,9 +8,16 @@
 #define MPU6050_ANGLE_H_
 
 #include <stdbool.h>
+#include <stdint.h>
+
+typedef void (*MPU6050_CalibrationProgressCallback)(
+    uint8_t secondsRemaining);
 
 /* 初始化传感器并在静止状态下采集 500 个样本校准零偏。 */
 bool MPU6050_Angle_init(void);
+/* 与普通初始化相同，并在标定阶段报告剩余秒数。 */
+bool MPU6050_Angle_initWithProgress(
+    MPU6050_CalibrationProgressCallback progressCallback);
 /* 读取 Z 轴角速度并完成一次 10 ms 积分。 */
 bool MPU6050_Angle_update(void);
 /* 将当前方向设为相对 0°，不会重新校准零偏。 */

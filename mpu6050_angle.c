@@ -171,7 +171,8 @@ static bool MPU6050_readGyroZRaw(int16_t *gyroZRaw)
     return true;
 }
 
-bool MPU6050_Angle_init(void)
+bool MPU6050_Angle_initWithProgress(
+    MPU6050_CalibrationProgressCallback progressCallback)
 {
     int64_t gyroZSum = 0;
     uint16_t sample;
@@ -181,6 +182,10 @@ bool MPU6050_Angle_init(void)
     gZAngleDegrees = 0.0f;
     gZRateDps = 0.0f;
     gDeviceId = 0U;
+
+    if (progressCallback != 0) {
+        progressCallback(5U);
+    }
 
     /* 等待传感器上电稳定，并先通过 WHO_AM_I 判断器件是否在线。 */
     delay_cycles(MPU6050_POWER_UP_DELAY_CYCLES);
@@ -217,6 +222,11 @@ bool MPU6050_Angle_init(void)
      * 该过程约 5 秒，期间必须让小车完全静止，否则会产生固定角速度误差。
      */
     for (sample = 0U; sample < MPU6050_CALIBRATION_SAMPLES; sample++) {
+        if ((progressCallback != 0) && (sample > 0U) &&
+            ((sample % 100U) == 0U)) {
+            progressCallback((uint8_t) (
+                (MPU6050_CALIBRATION_SAMPLES - sample) / 100U));
+        }
         if (!MPU6050_readGyroZRaw(&gyroZRaw)) {
             return false;
         }
@@ -226,7 +236,15 @@ bool MPU6050_Angle_init(void)
 
     gGyroZBiasRaw =
         (float) gyroZSum / (float) MPU6050_CALIBRATION_SAMPLES;
+    if (progressCallback != 0) {
+        progressCallback(0U);
+    }
     return true;
+}
+
+bool MPU6050_Angle_init(void)
+{
+    return MPU6050_Angle_initWithProgress(0);
 }
 
 bool MPU6050_Angle_update(void)

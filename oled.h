@@ -12,6 +12,8 @@ typedef enum {
 
 /* 初始化 128×64 SSD1306；I2C 通信失败时返回 false。 */
 bool OLED_Init(void);
+/* 显示 MPU6050 静止标定倒计时。 */
+bool OLED_ShowCalibration(uint8_t secondsRemaining);
 /* 显示当前选择的任务号。 */
 bool OLED_ShowTask(uint8_t taskNumber);
 /* 显示任务号和大字运行秒表。 */

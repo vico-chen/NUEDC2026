@@ -1,7 +1,7 @@
 #include "line_tracking.h"
 
 #define LINE_ACTIVE_LEVEL                    (1U)
-#define LINE_PID_KP                          (3.0f)
+#define LINE_PID_KP                          (2.5f)
 #define LINE_PID_KI                          (0.01f)
 #define LINE_PID_KD                          (0.0f)
 #define LINE_PID_INTEGRAL_LIMIT              (2000.0f)

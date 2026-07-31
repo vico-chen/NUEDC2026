@@ -23,10 +23,10 @@ const LapTask_Profile gLapTask5Profile = {
     .straightAccelerationSamples = 0U,
     .intersectionActiveThreshold = 4U,
     .intersectionConfirmSamples = 1U,
-    .finishAdvanceMm = 100U,
+    .finishAdvanceMm = 50U,
     .wheelDiameterMm = 65U,
     .decelerationEndRpm = 5,
-    .decelerationSamples = 100U,
+    .decelerationSamples = 200U,
     .brakeMinimumSamples = 15U,
     .brakeTimeoutSamples = 100U,
 };
@@ -38,20 +38,26 @@ const LapTask_Profile gLapTask6Profile = {
     .straightAccelerationSamples = 0U,
     .intersectionActiveThreshold = 4U,
     .intersectionConfirmSamples = 1U,
-    .finishAdvanceMm = 100U,
+    .finishAdvanceMm = 50U,
     .wheelDiameterMm = 65U,
     .decelerationEndRpm = 5,
-    .decelerationSamples = 100U,
+    .decelerationSamples = 200U,
     .brakeMinimumSamples = 15U,
     .brakeTimeoutSamples = 100U,
 };
 
+/*
+ * Task4 的 2100 mm 是同事在 2000 mm 赛题距离上得到的实车补偿值。
+ * 最后 800 mm 用 3 秒匀减速；若斜坡结束时编码器距离仍不足，
+ * 保持 5 RPM 缓行到目标，避免仅按时间停车造成欠程。
+ */
 const StraightTask_Profile gStraightTask4Profile = {
-    .targetDistanceMm = 2000U,
+    .targetDistanceMm = 2100U,
     .wheelDiameterMm = 65U,
-    .cruiseRpm = 130,
+    .cruiseRpm = 160,
     .accelerationSamples = 300U,
-    .decelerationDistanceMm = 150U,
+    .decelerationDistanceMm = 800U,
+    .decelerationSamples = 300U,
     .decelerationEndRpm = 5,
     .brakeMinimumSamples = 15U,
     .brakeTimeoutSamples = 100U,
