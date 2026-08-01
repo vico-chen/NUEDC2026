@@ -73,5 +73,8 @@ void MotorControl_update(MotorControl *motor);
 /* 取得一帧累计状态；没有新状态时返回 false。 */
 bool MotorControl_takeStatus(
     MotorControl *motor, MotorControl_Status *status);
+/* 非消费式读取最近一个状态周期的实际轮速，单位为 0.1 RPM。 */
+int32_t MotorControl_getLatestSpeedRpmTimes10(
+    const MotorControl *motor);
 
 #endif

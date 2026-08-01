@@ -9,6 +9,29 @@ static uint32_t MotorControl_getCountsPerOutputRevolution(
            (uint32_t) motor->config.encoderDecodeMultiplier;
 }
 
+/* 将一个状态统计周期的编码器计数换算为 0.1 RPM。 */
+static int32_t MotorControl_countsToRpmTimes10(
+    const MotorControl *motor, int32_t encoderCounts)
+{
+    int64_t numerator;
+    int64_t denominator;
+
+    numerator = (int64_t) encoderCounts * 600LL *
+        (int64_t) motor->config.sampleRateHz;
+    denominator = (int64_t) motor->config.reportSamples *
+        (int64_t) MotorControl_getCountsPerOutputRevolution(motor);
+
+    if (denominator == 0LL) {
+        return 0;
+    }
+    if (numerator >= 0LL) {
+        numerator += denominator / 2LL;
+    } else {
+        numerator -= denominator / 2LL;
+    }
+    return (int32_t) (numerator / denominator);
+}
+
 /* 清除增量式 PID 历史量，避免切换方向时沿用旧输出。 */
 static void MotorControl_resetPid(MotorControl *motor)
 {
@@ -254,10 +277,6 @@ void MotorControl_update(MotorControl *motor)
 bool MotorControl_takeStatus(
     MotorControl *motor, MotorControl_Status *status)
 {
-    int64_t rpmTimes10Numerator;
-    int64_t rpmTimes10Denominator;
-    uint32_t countsPerOutputRevolution;
-
     if (!motor->statusReady) {
         return false;
     }
@@ -268,22 +287,19 @@ bool MotorControl_takeStatus(
     status->pwmPercent = motor->pwmPercent;
     motor->statusReady = false;
 
-    countsPerOutputRevolution =
-        MotorControl_getCountsPerOutputRevolution(motor);
-    rpmTimes10Numerator =
-        (int64_t) status->encoderCounts * 600LL *
-        (int64_t) motor->config.sampleRateHz;
-    rpmTimes10Denominator =
-        (int64_t) motor->config.reportSamples *
-        (int64_t) countsPerOutputRevolution;
-
-    if (rpmTimes10Numerator >= 0) {
-        rpmTimes10Numerator += rpmTimes10Denominator / 2;
-    } else {
-        rpmTimes10Numerator -= rpmTimes10Denominator / 2;
-    }
     status->speedRpmTimes10 =
-        (int32_t) (rpmTimes10Numerator / rpmTimes10Denominator);
+        MotorControl_countsToRpmTimes10(
+            motor, status->encoderCounts);
 
     return true;
+}
+
+int32_t MotorControl_getLatestSpeedRpmTimes10(
+    const MotorControl *motor)
+{
+    /* 不清除 statusReady，因此不会影响 UART0 电机状态查询。 */
+    int32_t encoderCounts = motor->reportCounts;
+
+    return MotorControl_countsToRpmTimes10(
+        motor, encoderCounts);
 }

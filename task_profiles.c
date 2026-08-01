@@ -62,7 +62,7 @@ const LapTask_Profile gLapTask6Profile = {
  *
  */
 const StraightTask_Profile gStraightTask4Profile = {
-    .targetDistanceMm = 2100U,
+    .targetDistanceMm = 1950U,
     .wheelDiameterMm = 65U,
     .cruiseRpm = 180,
     .accelerationSamples = 300U,

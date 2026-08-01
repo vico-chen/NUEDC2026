@@ -52,6 +52,9 @@
 #define CAR_DEFAULT_SPEED_RPM (200)
 #define CAR_DEFAULT_TURN_INNER_PERCENT (50U)
 #define GRAYSCALE_STREAM_PERIOD_SAMPLES (10U) /* 10 × 10 ms = 100 ms */
+#define OPENMV_ACCELERATION_PERIOD_MS (10U)
+#define OPENMV_ACCELERATION_WHEEL_DIAMETER_MM (65U)
+#define PI_TIMES_1000 (3142LL)
 
 /*
  * Wheel layout:
@@ -218,6 +221,9 @@ static volatile bool gUart3ForwardRxOverflow;
 static bool gOledReady;
 static bool gGrayscaleStreamEnabled;
 static uint8_t gGrayscaleStreamDivider;
+static uint64_t gOpenMvLastAccelerationMs;
+static int32_t gOpenMvPreviousSpeedCmPerSecondTimes1000;
+static bool gOpenMvAccelerationReady;
 
 /* ======================== 巡线与任务状态 ======================== */
 static LineTracking gLineTracking;
@@ -235,6 +241,107 @@ static void UART_sendString(const char *text)
         DL_UART_Main_transmitDataBlocking(UART_0_INST, (uint8_t) *text);
         text++;
     }
+}
+
+/* 向 OpenMV 专用串口发送一个字节。 */
+static void OpenMV_sendByte(uint8_t value)
+{
+    DL_UART_Main_transmitDataBlocking(UART_OPENMV_INST, value);
+}
+
+/* 不依赖 printf，向 OpenMV 发送一个有符号十进制整数。 */
+static void OpenMV_sendInt32(int32_t value)
+{
+    char digits[10];
+    uint8_t count = 0U;
+    uint32_t magnitude;
+
+    if (value < 0) {
+        OpenMV_sendByte((uint8_t) '-');
+        magnitude = (uint32_t) (-(value + 1)) + 1U;
+    } else {
+        magnitude = (uint32_t) value;
+    }
+
+    do {
+        digits[count++] = (char) ('0' + (magnitude % 10U));
+        magnitude /= 10U;
+    } while ((magnitude != 0U) && (count < sizeof(digits)));
+
+    while (count > 0U) {
+        OpenMV_sendByte((uint8_t) digits[--count]);
+    }
+}
+
+/* TASK_START 按下时发送：T + 题号 + CRLF。 */
+static void OpenMV_sendTaskNumber(TaskManager_Task task)
+{
+    uint8_t taskNumber = (uint8_t) task;
+
+    if ((taskNumber < (uint8_t) TASK_MANAGER_TASK_1) ||
+        (taskNumber > (uint8_t) TASK_MANAGER_TASK_6)) {
+        return;
+    }
+
+    OpenMV_sendByte((uint8_t) 'T');
+    OpenMV_sendByte((uint8_t) ('0' + taskNumber));
+    OpenMV_sendByte((uint8_t) '\r');
+    OpenMV_sendByte((uint8_t) '\n');
+}
+
+/* 读取四轮最近 100 ms 平均转速，换算车辆平均线速度。 */
+static int32_t OpenMV_getVehicleSpeedCmPerSecondTimes1000(void)
+{
+    const MotorControl *motors[4] = {
+        &gMotorA, &gMotorB, &gMotorC, &gMotorD
+    };
+    int64_t rpmMagnitudeSum = 0LL;
+    int64_t meanRpmTimes10;
+    uint8_t i;
+
+    for (i = 0U; i < 4U; i++) {
+        int32_t rpmTimes10 =
+            MotorControl_getLatestSpeedRpmTimes10(motors[i]);
+
+        rpmMagnitudeSum += (rpmTimes10 < 0) ?
+            -(int64_t) rpmTimes10 : (int64_t) rpmTimes10;
+    }
+    meanRpmTimes10 = (rpmMagnitudeSum + 2LL) / 4LL;
+
+    /* v(cm/s)×1000 = RPM×10 × π×1000 × 轮径(mm) / 6000。 */
+    return (int32_t) ((meanRpmTimes10 * PI_TIMES_1000 *
+        OPENMV_ACCELERATION_WHEEL_DIAMETER_MM + 3000LL) / 6000LL);
+}
+
+/* 每   ms 发送：A + 加速度(cm/s^2) + CRLF。 */
+static void OpenMV_accelerationService(void)
+{
+    uint64_t nowMs = systick_ms;
+    uint64_t elapsedMs = nowMs - gOpenMvLastAccelerationMs;
+    int32_t speedTimes1000;
+    int32_t accelerationCmPerSecondSquared = 0;
+
+    if (elapsedMs < OPENMV_ACCELERATION_PERIOD_MS) {
+        return;
+    }
+    gOpenMvLastAccelerationMs = nowMs;
+    speedTimes1000 =
+        OpenMV_getVehicleSpeedCmPerSecondTimes1000();
+
+    if (gOpenMvAccelerationReady) {
+        accelerationCmPerSecondSquared = (int32_t)
+            (((int64_t) speedTimes1000 -
+              gOpenMvPreviousSpeedCmPerSecondTimes1000) /
+             (int64_t) elapsedMs);
+    } else {
+        gOpenMvAccelerationReady = true;
+    }
+    gOpenMvPreviousSpeedCmPerSecondTimes1000 = speedTimes1000;
+
+    OpenMV_sendByte((uint8_t) 'A');
+    OpenMV_sendInt32(accelerationCmPerSecondSquared);
+    OpenMV_sendByte((uint8_t) '\r');
+    OpenMV_sendByte((uint8_t) '\n');
 }
 
 /* 把 UART0 命令中 U3 后面的正文发送到 UART3，并自动补上 CRLF。 */
@@ -1203,6 +1310,8 @@ int main(void)
     NVIC_ClearPendingIRQ(UART_OPENMV_INST_INT_IRQN);
     NVIC_EnableIRQ(UART_OPENMV_INST_INT_IRQN);
 
+    /* OLED 冷启动比 MCU 慢，先等待电源和内部升压电路稳定。 */
+    delay_cycles(CPUCLK_FREQ / 5U); /* 200 ms */
     gOledReady = OLED_Init();
 
     /*
@@ -1280,6 +1389,9 @@ int main(void)
                 TaskManager_Task activeTask = TaskManager_getActiveTask();
                 bool taskStartPressed = TaskManager_taskStartPressed();
 
+                if (taskStartPressed) {
+                    OpenMV_sendTaskNumber(activeTask);
+                }
                 TaskExecutor_update(&gTaskExecutor, activeTask,
                     taskStartPressed);
             }
@@ -1297,6 +1409,7 @@ int main(void)
 
 
         OpenMvDebug_service();
+        OpenMV_accelerationService();
         UART3Forward_service();
         UART_serviceMotorStatus();
         __WFI();

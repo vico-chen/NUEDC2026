@@ -4,7 +4,7 @@
 #define LINE_TRACKING_ACTIVE_LEVEL (1U)
 
 /* 巡线 PID 参数。 */
-#define LINE_PID_KP (3.0f)
+#define LINE_PID_KP (4.0f)
 #define LINE_PID_KI (0.01f)
 #define LINE_PID_KD (0.0f)
 #define LINE_PID_INTEGRAL_LIMIT (2000.0f)
