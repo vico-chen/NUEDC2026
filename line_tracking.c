@@ -5,13 +5,17 @@
 #define LINE_PID_KI                          (0.01f)
 #define LINE_PID_KD                          (0.0f)
 #define LINE_PID_INTEGRAL_LIMIT              (2000.0f)
-#define LINE_ERROR_FILTER_ALPHA              (0.35f)
+#define LINE_ERROR_FILTER_ALPHA              (0.55f)
 #define LINE_ERROR_DEADBAND                  (5)
-#define LINE_LOST_ERROR                      (30)
+#define LINE_LOST_ERROR                      (60)
 #define LINE_OFFSET_DEADBAND_RPM             (8)
-#define LINE_MAX_OFFSET_PERCENT              (80U)
-#define LINE_MIN_INNER_PERCENT               (20U)
-#define LINE_MAX_OFFSET_STEP_RPM             (12)
+#define LINE_MAX_OFFSET_PERCENT              (85U)
+#define LINE_MIN_INNER_PERCENT               (15U)
+#define LINE_MAX_OFFSET_STEP_RPM             (18)
+#define LINE_CORNER_ERROR_THRESHOLD           (35)
+#define LINE_CORNER_MIN_OFFSET_PERCENT        (70U)
+#define LINE_SHARP_ERROR_THRESHOLD            (55)
+#define LINE_SHARP_MIN_OFFSET_PERCENT         (85U)
 #define LINE_SENSOR_DEBOUNCE_SAMPLES         (2U)
 #define LINE_DEBUG_PERIOD_SAMPLES            (10U)
 
@@ -42,6 +46,7 @@ void LineTracking_reset(LineTracking *tracking)
     tracking->filteredError = 0.0f;
     tracking->lastError = 0;
     tracking->appliedOffsetRpm = 0;
+    tracking->lastLineDirection = 0;
     tracking->activeMask = 0U;
     tracking->activeCount = 0U;
     tracking->debugDivider = 0U;
@@ -137,7 +142,7 @@ static void LineTracking_filterSensors(LineTracking *tracking,
 static int16_t LineTracking_computeError(LineTracking *tracking)
 {
     static const int16_t weights[GRAYSCALE_SENSOR_CHANNELS] = {
-        -30, -20, -15, 0, 0, 15, 20, 30
+        -60, -38, -18, 0, 0, 18, 38, 60
     };
     int32_t weightedSum = 0;
     uint8_t centerCount = 0U;
@@ -169,13 +174,14 @@ static int16_t LineTracking_computeError(LineTracking *tracking)
             (error <= LINE_ERROR_DEADBAND)) {
             return 0;
         }
+        tracking->lastLineDirection = (error > 0) ? 1 : -1;
         return error;
     }
 
-    if (tracking->lastError > 0) {
+    if (tracking->lastLineDirection > 0) {
         return LINE_LOST_ERROR;
     }
-    if (tracking->lastError < 0) {
+    if (tracking->lastLineDirection < 0) {
         return -LINE_LOST_ERROR;
     }
     return 0;
@@ -223,6 +229,8 @@ void LineTracking_update(LineTracking *tracking)
     int16_t error;
     int16_t desiredOffset;
     int16_t maxOffset;
+    int16_t minimumCornerOffset;
+    int16_t rawErrorAbs;
     float derivative;
     float pid;
 
@@ -271,6 +279,35 @@ void LineTracking_update(LineTracking *tracking)
     }
 
     desiredOffset = LineTracking_roundFloat(pid);
+
+    /*
+     * 普通 PID 在最外侧探头刚压线时修正量仍可能偏小，车辆会以过大的
+     * 转弯半径冲出弯道。大误差区加入按车速缩放的最小转向量：中等弯道
+     * 至少使用 70% 差速，最外侧探头或完全丢线时使用 85%。修正量仍经过
+     * 18 RPM/周期的斜率限制，内轮也始终保持正转，不会突然反刹卡顿。
+     */
+    rawErrorAbs = (rawError < 0) ? -rawError : rawError;
+    minimumCornerOffset = 0;
+    if ((tracking->activeCount == 0U) ||
+        (rawErrorAbs >= LINE_SHARP_ERROR_THRESHOLD)) {
+        minimumCornerOffset = (int16_t) (((int32_t)
+            tracking->baseSpeedRpm * LINE_SHARP_MIN_OFFSET_PERCENT) /
+            100);
+    } else if (rawErrorAbs >= LINE_CORNER_ERROR_THRESHOLD) {
+        minimumCornerOffset = (int16_t) (((int32_t)
+            tracking->baseSpeedRpm * LINE_CORNER_MIN_OFFSET_PERCENT) /
+            100);
+    }
+    if (minimumCornerOffset > 0) {
+        if ((rawError < 0) &&
+            (desiredOffset > -minimumCornerOffset)) {
+            desiredOffset = -minimumCornerOffset;
+        } else if ((rawError > 0) &&
+                   (desiredOffset < minimumCornerOffset)) {
+            desiredOffset = minimumCornerOffset;
+        }
+    }
+
     tracking->appliedOffsetRpm = LineTracking_slew(
         tracking->appliedOffsetRpm, desiredOffset);
     tracking->lastError = error;

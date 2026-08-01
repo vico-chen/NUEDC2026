@@ -59,7 +59,7 @@ SYSCONFIG_WEAK void SYSCFG_DL_init(void)
     SYSCFG_DL_I2C_MPU6050_init();
     SYSCFG_DL_I2C_OLED_init();
     SYSCFG_DL_UART_0_init();
-    SYSCFG_DL_UART_1_init();
+    SYSCFG_DL_UART_ESP32_init();
     /* Ensure backup structures have no valid state */
 	gPWM_MOTOR_CDBackup.backupRdy 	= false;
 	gTIMER_PIDBackup.backupRdy 	= false;
@@ -101,7 +101,7 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_I2C_reset(I2C_MPU6050_INST);
     DL_I2C_reset(I2C_OLED_INST);
     DL_UART_Main_reset(UART_0_INST);
-    DL_UART_Main_reset(UART_1_INST);
+    DL_UART_Main_reset(UART_ESP32_INST);
 
     DL_GPIO_enablePower(GPIOA);
     DL_GPIO_enablePower(GPIOB);
@@ -111,7 +111,7 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_I2C_enablePower(I2C_MPU6050_INST);
     DL_I2C_enablePower(I2C_OLED_INST);
     DL_UART_Main_enablePower(UART_0_INST);
-    DL_UART_Main_enablePower(UART_1_INST);
+    DL_UART_Main_enablePower(UART_ESP32_INST);
     delay_cycles(POWER_STARTUP_DELAY);
 }
 
@@ -153,9 +153,9 @@ SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
     DL_GPIO_initPeripheralInputFunction(
         GPIO_UART_0_IOMUX_RX, GPIO_UART_0_IOMUX_RX_FUNC);
     DL_GPIO_initPeripheralOutputFunction(
-        GPIO_UART_1_IOMUX_TX, GPIO_UART_1_IOMUX_TX_FUNC);
+        GPIO_UART_ESP32_IOMUX_TX, GPIO_UART_ESP32_IOMUX_TX_FUNC);
     DL_GPIO_initPeripheralInputFunction(
-        GPIO_UART_1_IOMUX_RX, GPIO_UART_1_IOMUX_RX_FUNC);
+        GPIO_UART_ESP32_IOMUX_RX, GPIO_UART_ESP32_IOMUX_RX_FUNC);
 
     DL_GPIO_initDigitalOutput(GPIO_MOTOR_A_AIN_1_IOMUX);
 
@@ -217,24 +217,27 @@ SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
 
     DL_GPIO_initDigitalOutput(GPIO_BTN_PIN_CHANGE_IOMUX);
 
-    DL_GPIO_clearPins(GPIOA, GPIO_MOTOR_B_BIN_2_PIN |
+    DL_GPIO_clearPins(GPIOA, GPIO_MOTOR_B_BIN_1_PIN |
 		GPIO_MOTOR_D_DIN_1_PIN |
 		GPIO_MOTOR_D_DIN_2_PIN |
 		GPIO_GRAYSCALE_OUT_PIN |
 		GPIO_BTN_PIN_START_PIN |
 		GPIO_BTN_PIN_CHANGE_PIN);
-    DL_GPIO_enableOutput(GPIOA, GPIO_MOTOR_B_BIN_2_PIN |
+    DL_GPIO_enableOutput(GPIOA, GPIO_MOTOR_B_BIN_1_PIN |
 		GPIO_MOTOR_D_DIN_1_PIN |
 		GPIO_MOTOR_D_DIN_2_PIN |
 		GPIO_GRAYSCALE_OUT_PIN |
 		GPIO_BTN_PIN_START_PIN |
 		GPIO_BTN_PIN_CHANGE_PIN);
-    DL_GPIO_setUpperPinsPolarity(GPIOA, DL_GPIO_PIN_17_EDGE_RISE_FALL);
-    DL_GPIO_clearInterruptStatus(GPIOA, GPIO_MOTOR_B_EB_2_PIN);
-    DL_GPIO_enableInterrupt(GPIOA, GPIO_MOTOR_B_EB_2_PIN);
+    DL_GPIO_setUpperPinsPolarity(GPIOA, DL_GPIO_PIN_25_EDGE_RISE_FALL |
+		DL_GPIO_PIN_17_EDGE_RISE_FALL);
+    DL_GPIO_clearInterruptStatus(GPIOA, GPIO_MOTOR_A_EB_1_PIN |
+		GPIO_MOTOR_B_EB_2_PIN);
+    DL_GPIO_enableInterrupt(GPIOA, GPIO_MOTOR_A_EB_1_PIN |
+		GPIO_MOTOR_B_EB_2_PIN);
     DL_GPIO_clearPins(GPIOB, GPIO_MOTOR_A_AIN_1_PIN |
 		GPIO_MOTOR_A_AIN_2_PIN |
-		GPIO_MOTOR_B_BIN_1_PIN |
+		GPIO_MOTOR_B_BIN_2_PIN |
 		GPIO_MOTOR_C_CIN_1_PIN |
 		GPIO_MOTOR_C_CIN_2_PIN |
 		GPIO_GRAYSCALE_AD0_PIN |
@@ -242,20 +245,17 @@ SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
 		GPIO_GRAYSCALE_AD2_PIN);
     DL_GPIO_enableOutput(GPIOB, GPIO_MOTOR_A_AIN_1_PIN |
 		GPIO_MOTOR_A_AIN_2_PIN |
-		GPIO_MOTOR_B_BIN_1_PIN |
+		GPIO_MOTOR_B_BIN_2_PIN |
 		GPIO_MOTOR_C_CIN_1_PIN |
 		GPIO_MOTOR_C_CIN_2_PIN |
 		GPIO_GRAYSCALE_AD0_PIN |
 		GPIO_GRAYSCALE_AD1_PIN |
 		GPIO_GRAYSCALE_AD2_PIN);
-    DL_GPIO_setLowerPinsPolarity(GPIOB, DL_GPIO_PIN_14_EDGE_RISE_FALL |
-		DL_GPIO_PIN_13_EDGE_RISE_FALL);
+    DL_GPIO_setLowerPinsPolarity(GPIOB, DL_GPIO_PIN_13_EDGE_RISE_FALL);
     DL_GPIO_setUpperPinsPolarity(GPIOB, DL_GPIO_PIN_16_EDGE_RISE_FALL);
-    DL_GPIO_clearInterruptStatus(GPIOB, GPIO_MOTOR_A_EB_1_PIN |
-		GPIO_MOTOR_C_EB_3_PIN |
+    DL_GPIO_clearInterruptStatus(GPIOB, GPIO_MOTOR_C_EB_3_PIN |
 		GPIO_MOTOR_D_EB_4_PIN);
-    DL_GPIO_enableInterrupt(GPIOB, GPIO_MOTOR_A_EB_1_PIN |
-		GPIO_MOTOR_C_EB_3_PIN |
+    DL_GPIO_enableInterrupt(GPIOB, GPIO_MOTOR_C_EB_3_PIN |
 		GPIO_MOTOR_D_EB_4_PIN);
 
 }
@@ -510,12 +510,12 @@ SYSCONFIG_WEAK void SYSCFG_DL_UART_0_init(void)
 
     DL_UART_Main_enable(UART_0_INST);
 }
-static const DL_UART_Main_ClockConfig gUART_1ClockConfig = {
+static const DL_UART_Main_ClockConfig gUART_ESP32ClockConfig = {
     .clockSel    = DL_UART_MAIN_CLOCK_BUSCLK,
     .divideRatio = DL_UART_MAIN_CLOCK_DIVIDE_RATIO_1
 };
 
-static const DL_UART_Main_Config gUART_1Config = {
+static const DL_UART_Main_Config gUART_ESP32Config = {
     .mode        = DL_UART_MAIN_MODE_NORMAL,
     .direction   = DL_UART_MAIN_DIRECTION_TX_RX,
     .flowControl = DL_UART_MAIN_FLOW_CONTROL_NONE,
@@ -524,21 +524,21 @@ static const DL_UART_Main_Config gUART_1Config = {
     .stopBits    = DL_UART_MAIN_STOP_BITS_ONE
 };
 
-SYSCONFIG_WEAK void SYSCFG_DL_UART_1_init(void)
+SYSCONFIG_WEAK void SYSCFG_DL_UART_ESP32_init(void)
 {
-    DL_UART_Main_setClockConfig(UART_1_INST, (DL_UART_Main_ClockConfig *) &gUART_1ClockConfig);
+    DL_UART_Main_setClockConfig(UART_ESP32_INST, (DL_UART_Main_ClockConfig *) &gUART_ESP32ClockConfig);
 
-    DL_UART_Main_init(UART_1_INST, (DL_UART_Main_Config *) &gUART_1Config);
+    DL_UART_Main_init(UART_ESP32_INST, (DL_UART_Main_Config *) &gUART_ESP32Config);
     /*
      * Configure baud rate by setting oversampling and baud rate divisors.
      *  Target baud rate: 9600
      *  Actual baud rate: 9600.24
      */
-    DL_UART_Main_setOversampling(UART_1_INST, DL_UART_OVERSAMPLING_RATE_16X);
-    DL_UART_Main_setBaudRateDivisor(UART_1_INST, UART_1_IBRD_32_MHZ_9600_BAUD, UART_1_FBRD_32_MHZ_9600_BAUD);
+    DL_UART_Main_setOversampling(UART_ESP32_INST, DL_UART_OVERSAMPLING_RATE_16X);
+    DL_UART_Main_setBaudRateDivisor(UART_ESP32_INST, UART_ESP32_IBRD_32_MHZ_9600_BAUD, UART_ESP32_FBRD_32_MHZ_9600_BAUD);
 
 
 
-    DL_UART_Main_enable(UART_1_INST);
+    DL_UART_Main_enable(UART_ESP32_INST);
 }
 

@@ -347,8 +347,8 @@ static void UART_printHelp(void)
     UART_sendString("\r\n");
     UART_sendString("[Tasks]   Q1..Q6 select | QS start | Q0 cancel | Q status\r\n");
     UART_sendString("  implemented: Q2/Q5/Q6 lap, Q4 straight 2000mm\r\n");
-    UART_sendString("  PA13 cycles Task2/4/5/6 | PA29 starts selected task\r\n");
-    UART_sendString("  Task1/Task3 need route definitions and will not move\r\n");
+    UART_sendString("  Q3 timer only: PA29/QS starts, press again stops\r\n");
+    UART_sendString("  PA13 cycles Task2/3/4/5/6 | Task1 unsupported\r\n");
     UART_sendString("\r\n");
     UART_sendString("[Status]\r\n");
     UART_sendString("  Y / Y0      yaw read / reset\r\n");
@@ -858,10 +858,11 @@ static void Car_processUartCommand(void)
                 }
                 UART_sendString("TASK_SELECTED ");
                 UART_sendInt32((int32_t) selected);
-                if ((selected == TASK_ID_1) ||
-                    (selected == TASK_ID_3)) {
+                if (selected == TASK_ID_1) {
                     UART_sendString(
                         " (unsupported: route not defined)\r\n");
+                } else if (selected == TASK_ID_3) {
+                    UART_sendString(" (timer only)\r\n");
                 } else {
                     UART_sendString("\r\n");
                 }
@@ -1437,32 +1438,41 @@ int main(void)
 void GROUP1_IRQHandler(void)
 {
     /*
-     * GPIOA/GPIOB 的编码器 B 相中断共享 GROUP1 入口。
-     * 先读取两端口的有效状态，再分别交给对应电机判断方向并累计计数。
+     * GPIOA/GPIOB 的编码器 B 相中断共享 GROUP1 入口。每个电机直接使用
+     * board_pins.h 中自己的端口和引脚读取状态，不再假设某台电机固定属于
+     * GPIOA 或 GPIOB；以后在 SysConfig 中跨端口换脚时无需修改这里的分组。
      */
-    uint32_t gpioBInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
-        BOARD_ENCODER_GPIOB_PORT, BOARD_ENCODER_GPIOB_MASK);
-    uint32_t gpioAInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
-        BOARD_ENCODER_GPIOA_PORT, BOARD_ENCODER_GPIOA_MASK);
+    uint32_t motorAInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
+        BOARD_MOTOR_A_ENCODER_B_PORT, BOARD_MOTOR_A_ENCODER_B_PIN);
+    uint32_t motorBInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
+        BOARD_MOTOR_B_ENCODER_B_PORT, BOARD_MOTOR_B_ENCODER_B_PIN);
+    uint32_t motorCInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
+        BOARD_MOTOR_C_ENCODER_B_PORT, BOARD_MOTOR_C_ENCODER_B_PIN);
+    uint32_t motorDInterruptStatus = DL_GPIO_getEnabledInterruptStatus(
+        BOARD_MOTOR_D_ENCODER_B_PORT, BOARD_MOTOR_D_ENCODER_B_PIN);
 
-    if ((gpioBInterruptStatus & BOARD_MOTOR_A_ENCODER_B_PIN) != 0U) {
+    if ((motorAInterruptStatus & BOARD_MOTOR_A_ENCODER_B_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorA);
     }
-    if ((gpioAInterruptStatus & BOARD_MOTOR_B_ENCODER_B_PIN) != 0U) {
+    if ((motorBInterruptStatus & BOARD_MOTOR_B_ENCODER_B_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorB);
     }
-    if ((gpioBInterruptStatus & BOARD_MOTOR_C_ENCODER_B_PIN) != 0U) {
+    if ((motorCInterruptStatus & BOARD_MOTOR_C_ENCODER_B_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorC);
     }
-    if ((gpioBInterruptStatus & BOARD_MOTOR_D_ENCODER_B_PIN) != 0U) {
+    if ((motorDInterruptStatus & BOARD_MOTOR_D_ENCODER_B_PIN) != 0U) {
         MotorControl_handleEncoderEdge(&gMotorD);
     }
 
-    /* 使用进入中断时读取的位掩码一次性清除已处理标志。 */
+    /* 每台电机只清除自己的 B 相标志，同端口上的其他 GPIO 不受影响。 */
     DL_GPIO_clearInterruptStatus(
-        BOARD_ENCODER_GPIOB_PORT, gpioBInterruptStatus);
+        BOARD_MOTOR_A_ENCODER_B_PORT, motorAInterruptStatus);
     DL_GPIO_clearInterruptStatus(
-        BOARD_ENCODER_GPIOA_PORT, gpioAInterruptStatus);
+        BOARD_MOTOR_B_ENCODER_B_PORT, motorBInterruptStatus);
+    DL_GPIO_clearInterruptStatus(
+        BOARD_MOTOR_C_ENCODER_B_PORT, motorCInterruptStatus);
+    DL_GPIO_clearInterruptStatus(
+        BOARD_MOTOR_D_ENCODER_B_PORT, motorDInterruptStatus);
 }
 
 void TIMER_PID_INST_IRQHandler(void)

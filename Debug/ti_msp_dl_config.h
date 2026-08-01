@@ -169,22 +169,22 @@ extern "C" {
 #define UART_0_BAUD_RATE                                                (115200)
 #define UART_0_IBRD_32_MHZ_115200_BAUD                                      (17)
 #define UART_0_FBRD_32_MHZ_115200_BAUD                                      (23)
-/* Defines for UART_1 */
-#define UART_1_INST                                                        UART1
-#define UART_1_INST_FREQUENCY                                           32000000
-#define UART_1_INST_IRQHandler                                  UART1_IRQHandler
-#define UART_1_INST_INT_IRQN                                      UART1_INT_IRQn
-#define GPIO_UART_1_RX_PORT                                                GPIOA
-#define GPIO_UART_1_TX_PORT                                                GPIOB
-#define GPIO_UART_1_RX_PIN                                        DL_GPIO_PIN_18
-#define GPIO_UART_1_TX_PIN                                         DL_GPIO_PIN_6
-#define GPIO_UART_1_IOMUX_RX                                     (IOMUX_PINCM40)
-#define GPIO_UART_1_IOMUX_TX                                     (IOMUX_PINCM23)
-#define GPIO_UART_1_IOMUX_RX_FUNC                      IOMUX_PINCM40_PF_UART1_RX
-#define GPIO_UART_1_IOMUX_TX_FUNC                      IOMUX_PINCM23_PF_UART1_TX
-#define UART_1_BAUD_RATE                                                  (9600)
-#define UART_1_IBRD_32_MHZ_9600_BAUD                                       (208)
-#define UART_1_FBRD_32_MHZ_9600_BAUD                                        (21)
+/* Defines for UART_ESP32 */
+#define UART_ESP32_INST                                                    UART1
+#define UART_ESP32_INST_FREQUENCY                                       32000000
+#define UART_ESP32_INST_IRQHandler                              UART1_IRQHandler
+#define UART_ESP32_INST_INT_IRQN                                  UART1_INT_IRQn
+#define GPIO_UART_ESP32_RX_PORT                                            GPIOA
+#define GPIO_UART_ESP32_TX_PORT                                            GPIOB
+#define GPIO_UART_ESP32_RX_PIN                                    DL_GPIO_PIN_18
+#define GPIO_UART_ESP32_TX_PIN                                     DL_GPIO_PIN_4
+#define GPIO_UART_ESP32_IOMUX_RX                                 (IOMUX_PINCM40)
+#define GPIO_UART_ESP32_IOMUX_TX                                 (IOMUX_PINCM17)
+#define GPIO_UART_ESP32_IOMUX_RX_FUNC                  IOMUX_PINCM40_PF_UART1_RX
+#define GPIO_UART_ESP32_IOMUX_TX_FUNC                  IOMUX_PINCM17_PF_UART1_TX
+#define UART_ESP32_BAUD_RATE                                              (9600)
+#define UART_ESP32_IBRD_32_MHZ_9600_BAUD                                   (208)
+#define UART_ESP32_FBRD_32_MHZ_9600_BAUD                                    (21)
 
 
 
@@ -202,32 +202,29 @@ extern "C" {
 #define GPIO_MOTOR_A_EA_1_PORT                                           (GPIOA)
 #define GPIO_MOTOR_A_EA_1_PIN                                    (DL_GPIO_PIN_7)
 #define GPIO_MOTOR_A_EA_1_IOMUX                                  (IOMUX_PINCM14)
-/* Defines for EB_1: GPIOB.14 with pinCMx 31 on package pin 2 */
-#define GPIO_MOTOR_A_EB_1_PORT                                           (GPIOB)
-// groups represented: ["GPIO_MOTOR_C","GPIO_MOTOR_D","GPIO_MOTOR_A"]
-// pins affected: ["EB_3","EB_4","EB_1"]
-#define GPIO_MULTIPLE_GPIOB_INT_IRQN                            (GPIOB_INT_IRQn)
-#define GPIO_MULTIPLE_GPIOB_INT_IIDX            (DL_INTERRUPT_GROUP1_IIDX_GPIOB)
-#define GPIO_MOTOR_A_EB_1_IIDX                              (DL_GPIO_IIDX_DIO14)
-#define GPIO_MOTOR_A_EB_1_PIN                                   (DL_GPIO_PIN_14)
-#define GPIO_MOTOR_A_EB_1_IOMUX                                  (IOMUX_PINCM31)
-/* Defines for BIN_1: GPIOB.24 with pinCMx 52 on package pin 23 */
-#define GPIO_MOTOR_B_BIN_1_PORT                                          (GPIOB)
-#define GPIO_MOTOR_B_BIN_1_PIN                                  (DL_GPIO_PIN_24)
-#define GPIO_MOTOR_B_BIN_1_IOMUX                                 (IOMUX_PINCM52)
-/* Defines for BIN_2: GPIOA.22 with pinCMx 47 on package pin 18 */
-#define GPIO_MOTOR_B_BIN_2_PORT                                          (GPIOA)
-#define GPIO_MOTOR_B_BIN_2_PIN                                  (DL_GPIO_PIN_22)
-#define GPIO_MOTOR_B_BIN_2_IOMUX                                 (IOMUX_PINCM47)
+/* Defines for EB_1: GPIOA.25 with pinCMx 55 on package pin 26 */
+#define GPIO_MOTOR_A_EB_1_PORT                                           (GPIOA)
+// groups represented: ["GPIO_MOTOR_B","GPIO_MOTOR_A"]
+// pins affected: ["EB_2","EB_1"]
+#define GPIO_MULTIPLE_GPIOA_INT_IRQN                            (GPIOA_INT_IRQn)
+#define GPIO_MULTIPLE_GPIOA_INT_IIDX            (DL_INTERRUPT_GROUP1_IIDX_GPIOA)
+#define GPIO_MOTOR_A_EB_1_IIDX                              (DL_GPIO_IIDX_DIO25)
+#define GPIO_MOTOR_A_EB_1_PIN                                   (DL_GPIO_PIN_25)
+#define GPIO_MOTOR_A_EB_1_IOMUX                                  (IOMUX_PINCM55)
+/* Defines for BIN_1: GPIOA.22 with pinCMx 47 on package pin 18 */
+#define GPIO_MOTOR_B_BIN_1_PORT                                          (GPIOA)
+#define GPIO_MOTOR_B_BIN_1_PIN                                  (DL_GPIO_PIN_22)
+#define GPIO_MOTOR_B_BIN_1_IOMUX                                 (IOMUX_PINCM47)
+/* Defines for BIN_2: GPIOB.24 with pinCMx 52 on package pin 23 */
+#define GPIO_MOTOR_B_BIN_2_PORT                                          (GPIOB)
+#define GPIO_MOTOR_B_BIN_2_PIN                                  (DL_GPIO_PIN_24)
+#define GPIO_MOTOR_B_BIN_2_IOMUX                                 (IOMUX_PINCM52)
 /* Defines for EA_2: GPIOA.15 with pinCMx 37 on package pin 8 */
 #define GPIO_MOTOR_B_EA_2_PORT                                           (GPIOA)
 #define GPIO_MOTOR_B_EA_2_PIN                                   (DL_GPIO_PIN_15)
 #define GPIO_MOTOR_B_EA_2_IOMUX                                  (IOMUX_PINCM37)
 /* Defines for EB_2: GPIOA.17 with pinCMx 39 on package pin 10 */
 #define GPIO_MOTOR_B_EB_2_PORT                                           (GPIOA)
-// pins affected by this interrupt request:["EB_2"]
-#define GPIO_MOTOR_B_INT_IRQN                                   (GPIOA_INT_IRQn)
-#define GPIO_MOTOR_B_INT_IIDX                   (DL_INTERRUPT_GROUP1_IIDX_GPIOA)
 #define GPIO_MOTOR_B_EB_2_IIDX                              (DL_GPIO_IIDX_DIO17)
 #define GPIO_MOTOR_B_EB_2_PIN                                   (DL_GPIO_PIN_17)
 #define GPIO_MOTOR_B_EB_2_IOMUX                                  (IOMUX_PINCM39)
@@ -237,24 +234,28 @@ extern "C" {
 /* Defines for CIN_1: GPIOB.5 with pinCMx 18 on package pin 53 */
 #define GPIO_MOTOR_C_CIN_1_PIN                                   (DL_GPIO_PIN_5)
 #define GPIO_MOTOR_C_CIN_1_IOMUX                                 (IOMUX_PINCM18)
-/* Defines for CIN_2: GPIOB.4 with pinCMx 17 on package pin 52 */
-#define GPIO_MOTOR_C_CIN_2_PIN                                   (DL_GPIO_PIN_4)
-#define GPIO_MOTOR_C_CIN_2_IOMUX                                 (IOMUX_PINCM17)
+/* Defines for CIN_2: GPIOB.25 with pinCMx 56 on package pin 27 */
+#define GPIO_MOTOR_C_CIN_2_PIN                                  (DL_GPIO_PIN_25)
+#define GPIO_MOTOR_C_CIN_2_IOMUX                                 (IOMUX_PINCM56)
 /* Defines for EA_3: GPIOB.12 with pinCMx 29 on package pin 64 */
 #define GPIO_MOTOR_C_EA_3_PIN                                   (DL_GPIO_PIN_12)
 #define GPIO_MOTOR_C_EA_3_IOMUX                                  (IOMUX_PINCM29)
 /* Defines for EB_3: GPIOB.13 with pinCMx 30 on package pin 1 */
+// groups represented: ["GPIO_MOTOR_D","GPIO_MOTOR_C"]
+// pins affected: ["EB_4","EB_3"]
+#define GPIO_MULTIPLE_GPIOB_INT_IRQN                            (GPIOB_INT_IRQn)
+#define GPIO_MULTIPLE_GPIOB_INT_IIDX            (DL_INTERRUPT_GROUP1_IIDX_GPIOB)
 #define GPIO_MOTOR_C_EB_3_IIDX                              (DL_GPIO_IIDX_DIO13)
 #define GPIO_MOTOR_C_EB_3_PIN                                   (DL_GPIO_PIN_13)
 #define GPIO_MOTOR_C_EB_3_IOMUX                                  (IOMUX_PINCM30)
-/* Defines for DIN_1: GPIOA.8 with pinCMx 19 on package pin 54 */
+/* Defines for DIN_1: GPIOA.9 with pinCMx 20 on package pin 55 */
 #define GPIO_MOTOR_D_DIN_1_PORT                                          (GPIOA)
-#define GPIO_MOTOR_D_DIN_1_PIN                                   (DL_GPIO_PIN_8)
-#define GPIO_MOTOR_D_DIN_1_IOMUX                                 (IOMUX_PINCM19)
-/* Defines for DIN_2: GPIOA.9 with pinCMx 20 on package pin 55 */
+#define GPIO_MOTOR_D_DIN_1_PIN                                   (DL_GPIO_PIN_9)
+#define GPIO_MOTOR_D_DIN_1_IOMUX                                 (IOMUX_PINCM20)
+/* Defines for DIN_2: GPIOA.8 with pinCMx 19 on package pin 54 */
 #define GPIO_MOTOR_D_DIN_2_PORT                                          (GPIOA)
-#define GPIO_MOTOR_D_DIN_2_PIN                                   (DL_GPIO_PIN_9)
-#define GPIO_MOTOR_D_DIN_2_IOMUX                                 (IOMUX_PINCM20)
+#define GPIO_MOTOR_D_DIN_2_PIN                                   (DL_GPIO_PIN_8)
+#define GPIO_MOTOR_D_DIN_2_IOMUX                                 (IOMUX_PINCM19)
 /* Defines for EA_4: GPIOB.15 with pinCMx 32 on package pin 3 */
 #define GPIO_MOTOR_D_EA_4_PORT                                           (GPIOB)
 #define GPIO_MOTOR_D_EA_4_PIN                                   (DL_GPIO_PIN_15)
@@ -303,7 +304,7 @@ void SYSCFG_DL_TIMER_PID_init(void);
 void SYSCFG_DL_I2C_MPU6050_init(void);
 void SYSCFG_DL_I2C_OLED_init(void);
 void SYSCFG_DL_UART_0_init(void);
-void SYSCFG_DL_UART_1_init(void);
+void SYSCFG_DL_UART_ESP32_init(void);
 
 
 bool SYSCFG_DL_saveConfiguration(void);

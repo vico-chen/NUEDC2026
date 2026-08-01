@@ -2,10 +2,10 @@
 
 /* 同事最终版本的任务参数；后续赛道实测只需集中修改本文件。 */
 const LapTask_Profile gLapTask2Profile = {
-    .cruiseRpm = 150,
-    .straightRpm = 280,
+    .cruiseRpm = 200,
+    .straightRpm = 200,
     .accelerationSamples = 80U,
-    .straightAccelerationSamples = 50U,
+    .straightAccelerationSamples = 0U,
     .intersectionActiveThreshold = 4U,
     .intersectionConfirmSamples = 2U,
     .finishAdvanceMm = 100U,

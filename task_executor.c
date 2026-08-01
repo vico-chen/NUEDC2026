@@ -33,6 +33,7 @@ static void TaskExecutor_stopModules(TaskExecutor *executor)
 {
     LapTaskControl_reset(&executor->lapTask);
     StraightTaskControl_reset(&executor->straightTask);
+    executor->timerTaskRunning = false;
     executor->activeModule = TASK_MODULE_NONE;
 }
 
@@ -59,6 +60,16 @@ static void TaskExecutor_showResult(TaskExecutor *executor,
             (uint8_t) executor->activeTask, result,
             Stopwatch_getElapsedMs());
     }
+}
+
+static void TaskExecutor_logElapsed(TaskExecutor *executor)
+{
+    TaskExecutor_log(executor, "TASK_ELAPSED_MS=");
+    if (executor->config.logInt32 != 0) {
+        executor->config.logInt32(
+            (int32_t) Stopwatch_getElapsedMs());
+    }
+    TaskExecutor_log(executor, "\r\n");
 }
 
 void TaskExecutor_init(TaskExecutor *executor,
@@ -106,6 +117,20 @@ bool TaskExecutor_startSelected(TaskExecutor *executor)
         TaskExecutor_lapProfile(selected);
     bool started = false;
 
+    /*
+     * Task3 是纯计时占位任务：第一次 PA29/QS 启动，第二次结束。
+     * 在这里完成切换，使实体按键和 UART 命令保持完全相同的行为。
+     */
+    if (TaskExecutor_isRunning(executor) &&
+        (executor->activeModule == TASK_MODULE_TIMER) &&
+        (executor->activeTask == TASK_ID_3)) {
+        executor->timerTaskRunning = false;
+        Stopwatch_stop();
+        TaskExecutor_log(executor, "TASK3_TIMER_STOPPED\r\n");
+        TaskExecutor_logElapsed(executor);
+        TaskExecutor_showResult(executor, OLED_TASK_RESULT_DONE);
+        return true;
+    }
     if (TaskExecutor_isRunning(executor)) {
         TaskExecutor_log(executor, "TASK_ALREADY_RUNNING\r\n");
         return false;
@@ -128,9 +153,18 @@ bool TaskExecutor_startSelected(TaskExecutor *executor)
         if (started) {
             executor->activeModule = TASK_MODULE_STRAIGHT;
         }
+    } else if (selected == TASK_ID_3) {
+        LineTracking_setEnabled(executor->config.lineTracking, false);
+        LineTracking_reset(executor->config.lineTracking);
+        CarControl_stop(executor->config.car);
+        executor->timerTaskRunning = true;
+        executor->activeModule = TASK_MODULE_TIMER;
+        started = true;
+        TaskExecutor_log(executor,
+            "TASK3_TIMER_STARTED (PA29/QS AGAIN TO STOP)\r\n");
     } else {
         TaskExecutor_log(executor,
-            "TASK_UNSUPPORTED (TASK1/TASK3 NEED ROUTE DEFINITION)\r\n");
+            "TASK_UNSUPPORTED (TASK1 NEEDS ROUTE DEFINITION)\r\n");
     }
 
     if (started) {
@@ -175,12 +209,7 @@ void TaskExecutor_update10ms(TaskExecutor *executor)
             executor->lastTaskFault =
                 executor->straightTask.state == STRAIGHT_TASK_FAULT;
         }
-        TaskExecutor_log(executor, "TASK_ELAPSED_MS=");
-        if (executor->config.logInt32 != 0) {
-            executor->config.logInt32(
-                (int32_t) Stopwatch_getElapsedMs());
-        }
-        TaskExecutor_log(executor, "\r\n");
+        TaskExecutor_logElapsed(executor);
         TaskExecutor_showResult(executor,
             executor->lastTaskFault ? OLED_TASK_RESULT_FAULT
                                     : OLED_TASK_RESULT_DONE);
@@ -199,6 +228,9 @@ bool TaskExecutor_isRunning(const TaskExecutor *executor)
     }
     if (executor->activeModule == TASK_MODULE_STRAIGHT) {
         return StraightTaskControl_isRunning(&executor->straightTask);
+    }
+    if (executor->activeModule == TASK_MODULE_TIMER) {
+        return executor->timerTaskRunning;
     }
     return false;
 }

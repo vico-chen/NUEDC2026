@@ -29,6 +29,8 @@ typedef struct {
     float filteredError;
     int16_t lastError;
     int16_t appliedOffsetRpm;
+    /* 最近一次可靠的偏线方向；即使滤波误差回到 0，丢线时仍能继续向原方向找线。 */
+    int8_t lastLineDirection;
     uint8_t activeMask;
     uint8_t activeCount;
     uint8_t debugDivider;

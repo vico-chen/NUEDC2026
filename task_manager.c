@@ -122,13 +122,16 @@ bool TaskManager_select(TaskId task)
 }
 
 /*
- * 当前已迁移并可直接执行的任务为 2、4、5、6。
- * 按键循环跳过尚未定义路线的任务 1 和任务 3。
+ * 当前可选择任务为 2、3、4、5、6，其中任务 3 仅用于人工计时。
+ * 按键循环只跳过尚未定义路线的任务 1。
  */
 TaskId TaskManager_selectNextSupported(void)
 {
     switch (gSelectedTask) {
         case TASK_ID_2:
+            gSelectedTask = TASK_ID_3;
+            break;
+        case TASK_ID_3:
             gSelectedTask = TASK_ID_4;
             break;
         case TASK_ID_4:

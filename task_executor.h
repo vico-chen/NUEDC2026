@@ -21,7 +21,9 @@ typedef struct {
 typedef enum {
     TASK_MODULE_NONE,
     TASK_MODULE_LAP,
-    TASK_MODULE_STRAIGHT
+    TASK_MODULE_STRAIGHT,
+    /* Task3 暂无车辆控制，仅用按键/QS 开始和停止秒表。 */
+    TASK_MODULE_TIMER
 } TaskExecutor_Module;
 
 typedef struct {
@@ -30,6 +32,7 @@ typedef struct {
     StraightTaskControl straightTask;
     TaskExecutor_Module activeModule;
     TaskId activeTask;
+    bool timerTaskRunning;
     bool lastTaskFault;
     uint32_t lastOledRefreshMs;
 } TaskExecutor;
